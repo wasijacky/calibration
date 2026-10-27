@@ -1,0 +1,2383 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ISO 儀校管理</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <!-- Google Fonts: Inter & Noto Sans TC -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'Noto Sans TC', 'system-ui', '-apple-system', '"Segoe UI"', 'Microsoft JhengHei', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'Fira Code', 'monospace']
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        /* Custom Industrial Clean Scrollbar & Utilities */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #f1f5f9; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        .modal-backdrop { background-color: rgba(15, 23, 42, 0.65); backdrop-filter: blur(3px); }
+        @keyframes pulse-border {
+            0%, 100% { border-color: rgba(225, 29, 72, 0.4); }
+            50% { border-color: rgba(225, 29, 72, 1); }
+        }
+        .suspended-row { animation: pulse-border 2s infinite; }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 font-sans antialiased min-h-screen flex flex-col selection:bg-indigo-600 selection:text-white">
+
+    <!-- Top Navigation Bar (Primary: slate-900) -->
+    <header class="bg-slate-900 text-white shadow-lg sticky top-0 z-30 border-b border-slate-800">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+            <!-- Brand Title -->
+            <div class="flex items-center space-x-3">
+                <div class="w-10 h-10 rounded-lg bg-indigo-600 flex items-center justify-center shadow-inner">
+                    <i class="fa-solid fa-compass-drafting text-xl text-white"></i>
+                </div>
+                <div>
+                    <div class="flex items-center space-x-2">
+                        <h1 class="text-lg font-bold tracking-tight text-white">ISO 儀校管理</h1>
+                        <span class="text-[11px] font-mono uppercase px-2 py-0.5 bg-slate-800 text-indigo-400 rounded border border-slate-700">ISO 9001 / 17025</span>
+                    </div>
+                    <p class="text-xs text-slate-400 hidden sm:block">ISO Calibration Management System</p>
+                </div>
+            </div>
+
+            <!-- Right Controls: Server Time, Auth Profile & Actions -->
+            <div class="flex items-center space-x-3 sm:space-x-5">
+                <!-- Real-time Server Clock -->
+                <div class="hidden md:flex items-center space-x-2 bg-slate-800/90 px-3 py-1.5 rounded-lg border border-slate-700 text-xs text-slate-300 font-mono">
+                    <i class="fa-regular fa-clock text-indigo-400"></i>
+                    <span id="serverClock">載入時間中...</span>
+                </div>
+
+                <!-- Connection & User Badge -->
+                <div class="flex items-center space-x-2 bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-700">
+                    <img id="userAvatarImg" src="" alt="Avatar" class="hidden w-6 h-6 rounded-full border border-indigo-400 object-cover" onerror="this.classList.add('hidden')">
+                    <span id="dbStatusDot" class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
+                    <div class="text-xs">
+                        <span id="userDisplayEmail" class="font-medium text-slate-200">驗證連線中...</span>
+                        <span id="userFullUid" class="block text-[10px] text-slate-400 font-mono truncate max-w-[130px] sm:max-w-[180px] cursor-pointer" title="點擊複製完整 UID">UID: ---</span>
+                    </div>
+                </div>
+
+                <!-- Auth Action Button -->
+                <button id="btnAuthModal" class="text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-2 rounded-lg border border-slate-700 transition flex items-center space-x-1.5">
+                    <i class="fa-solid fa-user-shield text-indigo-400"></i>
+                    <span id="authBtnLabel">帳號管理</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content Container -->
+    <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+
+        <!-- Banner Alert for Overdue / Suspended Equipment -->
+        <div id="overdueAlertBanner" class="hidden bg-rose-50 border-l-4 border-rose-600 p-4 rounded-r-xl shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div class="flex items-start sm:items-center space-x-3">
+                <div class="p-2 bg-rose-100 text-rose-600 rounded-lg shrink-0">
+                    <i class="fa-solid fa-triangle-exclamation text-lg"></i>
+                </div>
+                <div>
+                    <h3 class="text-sm font-bold text-rose-900">ISO 稽核高風險警示：偵測到「逾期停用 (SUSPENDED)」或「外校逾期」設備</h3>
+                    <p id="overdueAlertText" class="text-xs text-rose-700 mt-0.5">請立即確認產線已張貼停用標籤並隔離量具，或透過 AI 催校公文通知保管單位與外校廠商。</p>
+                </div>
+            </div>
+            <div class="flex items-center space-x-2 shrink-0">
+                <button onclick="setFilterTab('SUSPENDED')" class="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold rounded-lg shadow-sm transition">
+                    檢視停用清單
+                </button>
+                <button onclick="openAiNotificationModal()" class="px-3 py-1.5 bg-white hover:bg-rose-50 text-rose-700 border border-rose-300 text-xs font-semibold rounded-lg transition">
+                    <i class="fa-solid fa-wand-magic-sparkles mr-1"></i>生成催校通知
+                </button>
+            </div>
+        </div>
+
+        <!-- KPI Metric Cards (4 Columns) -->
+        <section class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <!-- Total Equipment -->
+            <div onclick="setFilterTab('ALL')" class="bg-white p-5 rounded-xl shadow-sm border border-slate-200 hover:border-indigo-400 cursor-pointer transition group">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-xs font-semibold uppercase tracking-wider text-slate-500">列管設備總數 (Total)</p>
+                        <p id="kpiTotal" class="text-3xl font-bold text-slate-900 mt-1">0</p>
+                    </div>
+                    <div class="w-12 h-12 rounded-xl bg-slate-100 group-hover:bg-indigo-50 text-slate-700 group-hover:text-indigo-600 flex items-center justify-center transition">
+                        <i class="fa-solid fa-microscope text-xl"></i>
+                    </div>
+                </div>
+                <div class="mt-3 flex items-center justify-between text-xs text-slate-500">
+                    <span id="kpiNormalSub">正常可用: 0 件</span>
+                    <span class="text-indigo-600 font-medium group-hover:underline">檢視全部 &rarr;</span>
+                </div>
+            </div>
+
+            <!-- Upcoming (<= 14 Days) -->
+            <div onclick="setFilterTab('UPCOMING')" class="bg-white p-5 rounded-xl shadow-sm border border-amber-200 hover:border-amber-400 cursor-pointer transition group">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-xs font-semibold uppercase tracking-wider text-amber-700">14天內即將到期 (Upcoming)</p>
+                        <p id="kpiUpcoming" class="text-3xl font-bold text-amber-500 mt-1">0</p>
+                    </div>
+                    <div class="w-12 h-12 rounded-xl bg-amber-50 text-amber-500 flex items-center justify-center">
+                        <i class="fa-solid fa-bell text-xl"></i>
+                    </div>
+                </div>
+                <div class="mt-3 flex items-center justify-between text-xs text-amber-700">
+                    <span>到期前 14 天自動預警</span>
+                    <span class="font-medium group-hover:underline">篩選預警 &rarr;</span>
+                </div>
+            </div>
+
+            <!-- In Calibration (In-Transit) -->
+            <div onclick="setFilterTab('IN_CALIBRATION')" class="bg-white p-5 rounded-xl shadow-sm border border-sky-200 hover:border-sky-400 cursor-pointer transition group">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-xs font-semibold uppercase tracking-wider text-sky-700">送校中待回 (In-Transit)</p>
+                        <p id="kpiInCal" class="text-3xl font-bold text-sky-500 mt-1">0</p>
+                    </div>
+                    <div class="w-12 h-12 rounded-xl bg-sky-50 text-sky-500 flex items-center justify-center">
+                        <i class="fa-solid fa-truck-fast text-xl"></i>
+                    </div>
+                </div>
+                <div class="mt-3 flex items-center justify-between text-xs text-sky-700">
+                    <span id="kpiInCalOverdueSub">含外校逾期: 0 件</span>
+                    <span class="font-medium group-hover:underline">追蹤送校 &rarr;</span>
+                </div>
+            </div>
+
+            <!-- Overdue / Suspended -->
+            <div onclick="setFilterTab('SUSPENDED')" class="bg-white p-5 rounded-xl shadow-sm border border-rose-200 hover:border-rose-500 cursor-pointer transition group">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-xs font-semibold uppercase tracking-wider text-rose-700">逾期停用 (Suspended)</p>
+                        <p id="kpiSuspended" class="text-3xl font-bold text-rose-600 mt-1">0</p>
+                    </div>
+                    <div class="w-12 h-12 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center">
+                        <i class="fa-solid fa-ban text-xl"></i>
+                    </div>
+                </div>
+                <div class="mt-3 flex items-center justify-between text-xs text-rose-700">
+                    <span>過期未校 / 驗收不合格管制</span>
+                    <span class="font-medium group-hover:underline">立即處置 &rarr;</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- Main Control & Action Bar -->
+        <section class="bg-white p-4 rounded-xl shadow-sm border border-slate-200 space-y-4">
+            <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                <!-- Filter Tabs -->
+                <div class="flex flex-wrap items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl">
+                    <button onclick="setFilterTab('ALL')" data-tab="ALL" class="filter-tab-btn px-3.5 py-2 rounded-lg text-xs font-semibold transition bg-slate-900 text-white shadow-sm">
+                        全部設備 <span id="badgeAll" class="ml-1 px-1.5 py-0.5 text-[10px] rounded-full bg-slate-700 text-slate-200">0</span>
+                    </button>
+                    <button onclick="setFilterTab('UPCOMING')" data-tab="UPCOMING" class="filter-tab-btn px-3.5 py-2 rounded-lg text-xs font-semibold transition text-slate-600 hover:text-slate-900">
+                        <span class="inline-block w-2 h-2 rounded-full bg-amber-500 mr-1"></span>即將到期 (14D) <span id="badgeUpcoming" class="ml-1 px-1.5 py-0.5 text-[10px] rounded-full bg-amber-100 text-amber-800">0</span>
+                    </button>
+                    <button onclick="setFilterTab('IN_CALIBRATION')" data-tab="IN_CALIBRATION" class="filter-tab-btn px-3.5 py-2 rounded-lg text-xs font-semibold transition text-slate-600 hover:text-slate-900">
+                        <span class="inline-block w-2 h-2 rounded-full bg-sky-500 mr-1"></span>送校中 <span id="badgeInCal" class="ml-1 px-1.5 py-0.5 text-[10px] rounded-full bg-sky-100 text-sky-800">0</span>
+                    </button>
+                    <button onclick="setFilterTab('SUSPENDED')" data-tab="SUSPENDED" class="filter-tab-btn px-3.5 py-2 rounded-lg text-xs font-semibold transition text-slate-600 hover:text-slate-900">
+                        <span class="inline-block w-2 h-2 rounded-full bg-rose-600 mr-1"></span>逾期停用 <span id="badgeSuspended" class="ml-1 px-1.5 py-0.5 text-[10px] rounded-full bg-rose-100 text-rose-800">0</span>
+                    </button>
+                </div>
+
+                <!-- Primary Action Buttons -->
+                <div class="flex flex-wrap items-center gap-2">
+                    <button onclick="openAiNotificationModal()" class="px-3.5 py-2 rounded-lg text-xs font-semibold bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 transition flex items-center space-x-1.5 shadow-sm">
+                        <i class="fa-solid fa-wand-magic-sparkles text-amber-600"></i>
+                        <span>AI 催校公文生成</span>
+                    </button>
+                    <button onclick="exportToCSV()" class="px-3.5 py-2 rounded-lg text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 transition flex items-center space-x-1.5">
+                        <i class="fa-solid fa-file-csv text-emerald-600"></i>
+                        <span>匯出 CSV 報表</span>
+                    </button>
+                    <button onclick="seedSampleData()" id="btnSeedData" class="px-3.5 py-2 rounded-lg text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 transition flex items-center space-x-1.5" title="載入符合 ISO 情境的測試儀器資料">
+                        <i class="fa-solid fa-database text-indigo-600"></i>
+                        <span>載入範例台帳</span>
+                    </button>
+                    <button onclick="openEquipmentModal()" class="px-4 py-2 rounded-lg text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm transition flex items-center space-x-1.5">
+                        <i class="fa-solid fa-plus"></i>
+                        <span>新增儀校設備</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Search & Category Filter Row -->
+            <div class="grid grid-cols-1 md:grid-cols-12 gap-3 pt-2 border-t border-slate-100">
+                <div class="md:col-span-7 relative">
+                    <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
+                    <input type="text" id="searchInput" oninput="renderEquipmentTable()" placeholder="搜尋設備編碼 (如 QC-CAL-042)、設備名稱、型號、保管單位或外校廠商..." class="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition">
+                </div>
+                <div class="md:col-span-3">
+                    <select id="categoryFilter" onchange="renderEquipmentTable()" class="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                        <option value="ALL">所有校驗類別 (內校 + 外校)</option>
+                        <option value="INTERNAL">INTERNAL - 廠內自校 (內校)</option>
+                        <option value="EXTERNAL">EXTERNAL - 委外校正 (外校)</option>
+                    </select>
+                </div>
+                <div class="md:col-span-2">
+                    <select id="deptFilter" onchange="renderEquipmentTable()" class="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                        <option value="ALL">所有保管單位</option>
+                    </select>
+                </div>
+            </div>
+        </section>
+
+        <!-- Equipment Ledger Table Section -->
+        <section class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+            <div class="px-5 py-3.5 bg-slate-50 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div class="flex items-center space-x-2">
+                    <h2 class="text-sm font-bold text-slate-800">ISO 儀校設備管制台帳</h2>
+                    <span id="tableCountInfo" class="text-xs text-slate-500">(共 0 筆資料)</span>
+                </div>
+                <div class="flex items-center space-x-4 text-[11px] text-slate-500">
+                    <span class="flex items-center"><span class="w-2.5 h-2.5 rounded-full bg-emerald-600 mr-1.5"></span>正常 (&gt;14天)</span>
+                    <span class="flex items-center"><span class="w-2.5 h-2.5 rounded-full bg-amber-500 mr-1.5"></span>即將到期 (&le;14天)</span>
+                    <span class="flex items-center"><span class="w-2.5 h-2.5 rounded-full bg-sky-500 mr-1.5"></span>送校待回</span>
+                    <span class="flex items-center"><span class="w-2.5 h-2.5 rounded-full bg-rose-600 mr-1.5"></span>逾期停用</span>
+                </div>
+            </div>
+
+            <div class="overflow-x-auto">
+                <table class="w-full text-left border-collapse">
+                    <thead>
+                        <tr class="bg-slate-100/80 text-slate-600 text-[11px] font-bold uppercase tracking-wider border-b border-slate-200">
+                            <th class="py-3 px-4">設備管理編碼</th>
+                            <th class="py-3 px-4">設備名稱 / 廠牌型號</th>
+                            <th class="py-3 px-4">保管單位 / 位置</th>
+                            <th class="py-3 px-4">校驗類別 &amp; 週期</th>
+                            <th class="py-3 px-4">前次校驗日</th>
+                            <th class="py-3 px-4">下次到期日 (剩餘天數)</th>
+                            <th class="py-3 px-4">即時管制狀態</th>
+                            <th class="py-3 px-4 text-right">狀態操作與履歷</th>
+                        </tr>
+                    </thead>
+                    <tbody id="equipmentTableBody" class="divide-y divide-slate-200 text-xs">
+                        <!-- Dynamically populated by JS -->
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Empty State -->
+            <div id="emptyStateBox" class="hidden py-14 px-4 text-center">
+                <div class="w-16 h-16 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center mx-auto mb-3">
+                    <i class="fa-solid fa-clipboard-list text-2xl"></i>
+                </div>
+                <h3 class="text-sm font-bold text-slate-700">目前無符合條件的儀校設備資料</h3>
+                <p class="text-xs text-slate-500 mt-1 max-w-md mx-auto">您可以點擊上方「載入範例台帳」快速建立符合 ISO 9001 情境的量具資料（含正常、14天預警、外校中與逾期停用案例），或直接新增設備。</p>
+                <div class="mt-4 flex justify-center space-x-3">
+                    <button onclick="seedSampleData()" class="px-4 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-semibold text-xs rounded-lg border border-indigo-200 transition">
+                        <i class="fa-solid fa-wand-magic-sparkles mr-1"></i>一鍵載入範例台帳
+                    </button>
+                    <button onclick="openEquipmentModal()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs rounded-lg shadow-sm transition">
+                        <i class="fa-solid fa-plus mr-1"></i>新增第一筆設備
+                    </button>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="bg-white border-t border-slate-200 mt-auto">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex flex-col sm:flex-row items-center justify-between text-xs text-slate-500 gap-2">
+            <div>
+                <span class="font-semibold text-slate-700">ISO 儀校管理系統</span> &bull; 符合 ISO 9001 / ISO/IEC 17025 量測設備追溯與防呆管制規範
+            </div>
+            <div class="flex items-center space-x-4">
+                <span>狀態機引擎：14天自動預警 / 到期強制停用</span>
+                <span>AI 引擎：Gemini 3 Flash</span>
+            </div>
+        </div>
+    </footer>
+
+    <!-- MODAL 1: Add / Edit Equipment Modal -->
+    <div id="equipmentModal" class="fixed inset-0 z-50 hidden modal-backdrop flex items-center justify-center p-4 overflow-y-auto">
+        <div class="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-2xl w-full overflow-hidden my-8">
+            <div class="bg-slate-900 text-white px-6 py-4 flex items-center justify-between">
+                <div class="flex items-center space-x-2.5">
+                    <i class="fa-solid fa-id-card-clip text-indigo-400 text-lg"></i>
+                    <h3 id="eqModalTitle" class="text-base font-bold">建立儀校設備卡</h3>
+                </div>
+                <button onclick="closeEquipmentModal()" class="text-slate-400 hover:text-white transition">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
+            </div>
+
+            <form id="equipmentForm" onsubmit="handleSaveEquipment(event)" class="p-6 space-y-4">
+                <input type="hidden" id="eqDocId">
+
+                <!-- Unique Asset No Warning Banner -->
+                <div id="duplicateAssetWarning" class="hidden bg-rose-50 border border-rose-300 text-rose-700 px-4 py-2.5 rounded-lg text-xs flex items-center space-x-2">
+                    <i class="fa-solid fa-circle-exclamation text-rose-600"></i>
+                    <span id="duplicateAssetWarningText">設備管理編碼 (Asset No) 已存在！為確保 ISO 追溯唯一性，請更換編碼。</span>
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 mb-1">設備管理編碼 (Asset No) <span class="text-rose-600">*</span> <span class="text-[10px] font-normal text-slate-500">(唯一值)</span></label>
+                        <input type="text" id="eqAssetNo" required placeholder="例如: QC-CAL-042" class="w-full px-3.5 py-2 border border-slate-300 rounded-lg text-xs font-mono uppercase focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 mb-1">設備名稱 <span class="text-rose-600">*</span></label>
+                        <input type="text" id="eqName" required placeholder="例如: 數位游標卡尺 150mm" class="w-full px-3.5 py-2 border border-slate-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 mb-1">廠牌型號 (Model) <span class="text-rose-600">*</span></label>
+                        <input type="text" id="eqModel" required placeholder="例如: Mitutoyo 500-196-30" class="w-full px-3.5 py-2 border border-slate-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 mb-1">保管/使用單位 (Department) <span class="text-rose-600">*</span></label>
+                        <input type="text" id="eqDepartment" required placeholder="例如: 加工一課 / 品管課" class="w-full px-3.5 py-2 border border-slate-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 mb-1">校驗類別 <span class="text-rose-600">*</span></label>
+                        <select id="eqCategory" onchange="handleCategoryChange()" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                            <option value="EXTERNAL">EXTERNAL (外校)</option>
+                            <option value="INTERNAL">INTERNAL (內校)</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 mb-1">校驗週期 (月) <span class="text-rose-600">*</span></label>
+                        <select id="eqCycleMonths" onchange="recalculateModalNextDue()" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                            <option value="3">3 個月 (季校)</option>
+                            <option value="6">6 個月 (半年校)</option>
+                            <option value="12" selected>12 個月 (年校)</option>
+                            <option value="24">24 個月 (兩年校)</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label id="vendorFieldLabel" class="block text-xs font-bold text-slate-700 mb-1">外校廠商 / 內校人員 <span class="text-rose-600">*</span></label>
+                        <input type="text" id="eqVendor" required placeholder="例如: 精密量測檢驗中心" class="w-full px-3.5 py-2 border border-slate-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-slate-50 p-3.5 rounded-xl border border-slate-200">
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 mb-1">前次校驗日期 (Last Cal Date) <span class="text-rose-600">*</span></label>
+                        <input type="date" id="eqLastCalDate" required onchange="recalculateModalNextDue()" class="w-full px-3.5 py-2 bg-white border border-slate-300 rounded-lg text-xs font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 mb-1">下次到期日 (Next Due Date) <span class="text-indigo-600 text-[10px] font-normal">(依週期自動跨閏月推算)</span></label>
+                        <input type="date" id="eqNextDueDate" required class="w-full px-3.5 py-2 bg-white border border-slate-300 rounded-lg text-xs font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-bold text-slate-700 mb-1">存放位置與備註說明 (Location &amp; Notes)</label>
+                    <input type="text" id="eqNotes" placeholder="例如: 放置於三樓品管課恆溫室 B2 櫃" class="w-full px-3.5 py-2 border border-slate-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                </div>
+
+                <div class="pt-4 border-t border-slate-200 flex items-center justify-end space-x-3">
+                    <button type="button" onclick="closeEquipmentModal()" class="px-4 py-2 rounded-lg text-xs font-semibold text-slate-600 hover:bg-slate-100 transition">取消</button>
+                    <button type="submit" id="btnSaveEquipment" class="px-5 py-2 rounded-lg text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm transition flex items-center space-x-1.5">
+                        <i class="fa-solid fa-floppy-disk"></i>
+                        <span>儲存設備資料</span>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- MODAL 2: Send to Calibration Modal -->
+    <div id="sendCalModal" class="fixed inset-0 z-50 hidden modal-backdrop flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-md w-full overflow-hidden">
+            <div class="bg-sky-600 text-white px-6 py-4 flex items-center justify-between">
+                <div class="flex items-center space-x-2">
+                    <i class="fa-solid fa-truck-fast text-lg"></i>
+                    <h3 class="text-base font-bold">一鍵送校登記 (Send for Calibration)</h3>
+                </div>
+                <button onclick="closeSendCalModal()" class="text-sky-100 hover:text-white transition">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
+            </div>
+            <form onsubmit="handleConfirmSendCal(event)" class="p-6 space-y-4">
+                <input type="hidden" id="sendCalEqId">
+                <div class="bg-sky-50 border border-sky-200 rounded-xl p-3.5 text-xs space-y-1">
+                    <div class="font-mono font-bold text-sky-900" id="sendCalAssetDisplay">QC-CAL-000</div>
+                    <div class="text-slate-700 font-medium" id="sendCalNameDisplay">設備名稱</div>
+                    <div class="text-slate-500 text-[11px]" id="sendCalDueDisplay">原訂到期日: ----</div>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-700 mb-1">外送檢驗廠商 / 內校負責人員 <span class="text-rose-600">*</span></label>
+                    <input type="text" id="sendCalVendorInput" required placeholder="例如: SGS 台灣檢驗科技 / 精密量測中心" class="w-full px-3.5 py-2 border border-slate-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-sky-500">
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-700 mb-1">送件備註 / 單號說明</label>
+                    <input type="text" id="sendCalNotesInput" placeholder="例如: 順豐快遞單號 SF1029384、預計 7 個工作天返還" class="w-full px-3.5 py-2 border border-slate-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-sky-500">
+                </div>
+                <p class="text-[11px] text-slate-500 leading-relaxed">
+                    <i class="fa-solid fa-circle-info text-sky-500 mr-1"></i>送出後設備狀態將變更為 <span class="font-bold text-sky-700">送校待回 (IN_CALIBRATION)</span>。若外校期間超過原訂到期日，系統將自動加註「外校逾期」但不會誤判為廠內違規使用。
+                </p>
+                <div class="pt-3 border-t border-slate-200 flex justify-end space-x-2">
+                    <button type="button" onclick="closeSendCalModal()" class="px-4 py-2 rounded-lg text-xs font-semibold text-slate-600 hover:bg-slate-100">取消</button>
+                    <button type="submit" id="btnConfirmSendCal" class="px-4 py-2 rounded-lg text-xs font-semibold bg-sky-600 hover:bg-sky-700 text-white shadow-sm">確認送校</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- MODAL 3: Calibration Verification & Gemini AI Smart Fill Modal -->
+    <div id="completeCalModal" class="fixed inset-0 z-50 hidden modal-backdrop flex items-center justify-center p-4 overflow-y-auto">
+        <div class="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-2xl w-full overflow-hidden my-8">
+            <div class="bg-slate-900 text-white px-6 py-4 flex items-center justify-between">
+                <div class="flex items-center space-x-2.5">
+                    <i class="fa-solid fa-clipboard-check text-emerald-400 text-lg"></i>
+                    <div>
+                        <h3 class="text-base font-bold">校驗驗收與智慧回填 (Calibration Verification)</h3>
+                        <p class="text-[11px] text-slate-400">支援 Gemini AI 自動解析校驗報告文字或證書圖片</p>
+                    </div>
+                </div>
+                <button onclick="closeCompleteCalModal()" class="text-slate-400 hover:text-white transition">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
+            </div>
+
+            <div class="p-6 space-y-5">
+                <!-- Target Equipment Summary -->
+                <div class="bg-slate-100 rounded-xl p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2 border border-slate-200">
+                    <div>
+                        <span id="compAssetNo" class="font-mono text-xs font-bold px-2 py-0.5 bg-slate-800 text-white rounded">QC-CAL-042</span>
+                        <span id="compEqName" class="text-sm font-bold text-slate-800 ml-2">數位游標卡尺 150mm</span>
+                    </div>
+                    <div class="text-xs text-slate-600">
+                        校驗週期: <span id="compCycleMonths" class="font-bold text-indigo-600">12</span> 個月
+                    </div>
+                </div>
+
+                <!-- Gemini AI Smart Report Parser Box -->
+                <div class="bg-indigo-50/70 border border-indigo-200 rounded-xl p-4 space-y-3">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center space-x-2">
+                            <span class="w-6 h-6 rounded-lg bg-indigo-600 text-white flex items-center justify-center text-xs">
+                                <i class="fa-solid fa-wand-magic-sparkles"></i>
+                            </span>
+                            <h4 class="text-xs font-bold text-indigo-950">Gemini AI 校驗報告智慧解析 (OCR / 摘要擷取)</h4>
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <button type="button" onclick="fillSampleReportText('PASS')" class="text-[11px] text-indigo-600 hover:underline font-medium">載入合格報告範例</button>
+                            <span class="text-slate-300">|</span>
+                            <button type="button" onclick="fillSampleReportText('FAIL')" class="text-[11px] text-rose-600 hover:underline font-medium">載入不合格報告範例</button>
+                        </div>
+                    </div>
+
+                    <textarea id="aiReportRawText" rows="3" placeholder="在此貼上外校報告/內校紀錄文字摘要（例如：校驗報告編號 CERT-2026-9981，校驗日期 2026年10月20日，由 TAF 認證實驗室 SGS 執行，全數測點誤差均在 ±0.02mm 規範內，判定結果：合格 PASS）..." class="w-full p-3 bg-white border border-indigo-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500"></textarea>
+
+                    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                        <!-- Optional Image Upload for Gemini Vision OCR -->
+                        <div class="flex items-center space-x-2">
+                            <label class="cursor-pointer px-3 py-1.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 rounded-lg text-xs font-medium transition flex items-center space-x-1.5">
+                                <i class="fa-regular fa-image text-indigo-600"></i>
+                                <span id="ocrImageLabel">上傳報告圖片 (選填)</span>
+                                <input type="file" id="ocrImageInput" accept="image/*" onchange="handleOcrImageSelect(event)" class="hidden">
+                            </label>
+                            <button type="button" id="btnClearOcrImage" onclick="clearOcrImage()" class="hidden text-xs text-rose-600 hover:underline">移除圖片</button>
+                        </div>
+
+                        <button type="button" id="btnRunAiExtract" onclick="runGeminiReportExtract()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-lg shadow-sm transition flex items-center justify-center space-x-1.5">
+                            <i class="fa-solid fa-bolt"></i>
+                            <span>AI 自動解析並帶入下方表單</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Verification Form -->
+                <form id="completeCalForm" onsubmit="handleConfirmCompleteCal(event)" class="space-y-4">
+                    <input type="hidden" id="compEqId">
+
+                    <!-- High Risk Warning when Result === FAIL -->
+                    <div id="failResultLockAlert" class="hidden bg-rose-50 border-2 border-rose-600 rounded-xl p-3.5 text-xs text-rose-900 flex items-start space-x-3">
+                        <i class="fa-solid fa-ban text-rose-600 text-lg mt-0.5"></i>
+                        <div>
+                            <p class="font-bold text-rose-800">ISO 防呆管制觸發：校驗結果為「不合格 (FAIL)」</p>
+                            <p class="text-rose-700 mt-0.5">依據 PRD 第 7 節規範，驗收不合格之設備<strong>不可推算下一週期</strong>，送出後系統將強制鎖定狀態為 <strong>SUSPENDED (逾期/不合格停用)</strong>，請立即隔離該量具！</p>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                        <div>
+                            <label class="block text-xs font-bold text-slate-700 mb-1">校驗結果判定 (Result) <span class="text-rose-600">*</span></label>
+                            <select id="compResult" onchange="handleResultChangeInModal()" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                                <option value="PASS">PASS - 合格</option>
+                                <option value="CONDITIONAL">CONDITIONAL - 限制允收</option>
+                                <option value="FAIL">FAIL - 不合格 (強制停用)</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-700 mb-1">本次實施校驗日 <span class="text-rose-600">*</span></label>
+                            <input type="date" id="compCalDate" required onchange="recalculateCompNextDue()" class="w-full px-3.5 py-2 border border-slate-300 rounded-lg text-xs font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-700 mb-1">推算下次到期日 <span class="text-rose-600">*</span></label>
+                            <input type="date" id="compNextDueDate" required class="w-full px-3.5 py-2 border border-slate-300 rounded-lg text-xs font-mono bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-xs font-bold text-slate-700 mb-1">校驗報告 / 證書編號 (Cert No) <span class="text-rose-600">*</span></label>
+                            <input type="text" id="compCertNo" required placeholder="例如: CERT-2026-8899A" class="w-full px-3.5 py-2 border border-slate-300 rounded-lg text-xs font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-700 mb-1">校驗執行單位 / 實驗室 (Calibrator) <span class="text-rose-600">*</span></label>
+                            <input type="text" id="compCalibrator" required placeholder="例如: SGS 實驗室 / 精密量測中心" class="w-full px-3.5 py-2 border border-slate-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                        </div>
+                    </div>
+
+                    <div class="pt-4 border-t border-slate-200 flex items-center justify-end space-x-3">
+                        <button type="button" onclick="closeCompleteCalModal()" class="px-4 py-2 rounded-lg text-xs font-semibold text-slate-600 hover:bg-slate-100">取消</button>
+                        <button type="submit" id="btnSubmitCompleteCal" class="px-5 py-2 rounded-lg text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm transition flex items-center space-x-1.5">
+                            <i class="fa-solid fa-check-double"></i>
+                            <span>確認驗收並寫入校驗履歷</span>
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL 4: Calibration History Logs Modal -->
+    <div id="historyLogsModal" class="fixed inset-0 z-50 hidden modal-backdrop flex items-center justify-center p-4 overflow-y-auto">
+        <div class="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-3xl w-full overflow-hidden my-8">
+            <div class="bg-slate-900 text-white px-6 py-4 flex items-center justify-between">
+                <div class="flex items-center space-x-2.5">
+                    <i class="fa-solid fa-clock-rotate-left text-indigo-400 text-lg"></i>
+                    <div>
+                        <h3 id="histModalTitle" class="text-base font-bold">設備校驗歷史履歷 (Calibration Logs)</h3>
+                        <p id="histModalSubtitle" class="text-xs text-slate-400 font-mono">Asset No: ---</p>
+                    </div>
+                </div>
+                <button onclick="closeHistoryLogsModal()" class="text-slate-400 hover:text-white transition">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
+            </div>
+
+            <div class="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
+                <div id="historyLogsList" class="space-y-3">
+                    <!-- Populated via JS -->
+                </div>
+            </div>
+
+            <div class="px-6 py-3.5 bg-slate-50 border-t border-slate-200 flex justify-end">
+                <button onclick="closeHistoryLogsModal()" class="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white text-xs font-semibold rounded-lg">關閉視窗</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL 5: Gemini AI Calibration Reminder Document Generator -->
+    <div id="aiNotifyModal" class="fixed inset-0 z-50 hidden modal-backdrop flex items-center justify-center p-4 overflow-y-auto">
+        <div class="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-2xl w-full overflow-hidden my-8">
+            <div class="bg-slate-900 text-white px-6 py-4 flex items-center justify-between">
+                <div class="flex items-center space-x-2.5">
+                    <i class="fa-solid fa-bullhorn text-amber-400 text-lg"></i>
+                    <div>
+                        <h3 class="text-base font-bold">AI 智慧催校通知公文產生器</h3>
+                        <p class="text-[11px] text-slate-400">自動彙整「14天即將到期」、「逾期停用」與「外校逾期」設備清單</p>
+                    </div>
+                </div>
+                <button onclick="closeAiNotificationModal()" class="text-slate-400 hover:text-white transition">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
+            </div>
+
+            <div class="p-6 space-y-4">
+                <div class="flex flex-wrap items-center justify-between gap-2 bg-slate-50 p-3 rounded-xl border border-slate-200">
+                    <div class="flex items-center space-x-2">
+                        <span class="text-xs font-bold text-slate-700">選擇公文格式：</span>
+                        <button type="button" onclick="switchNotifyFormat('LINE')" id="btnFmtLine" class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-600 text-white">LINE 群組速報格式</button>
+                        <button type="button" onclick="switchNotifyFormat('EMAIL')" id="btnFmtEmail" class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-white text-slate-700 border border-slate-300">正式 ISO 稽核 Email 公文</button>
+                    </div>
+                    <button type="button" id="btnRegenerateAiNotify" onclick="generateAiNotification()" class="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-xs font-semibold transition flex items-center space-x-1">
+                        <i class="fa-solid fa-wand-magic-sparkles"></i>
+                        <span>使用 Gemini AI 潤飾生成</span>
+                    </button>
+                </div>
+
+                <div>
+                    <textarea id="aiNotifyOutput" rows="12" class="w-full p-4 bg-slate-50 border border-slate-300 rounded-xl text-xs font-mono leading-relaxed text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"></textarea>
+                </div>
+
+                <div class="flex items-center justify-between pt-2">
+                    <span class="text-[11px] text-slate-500"><i class="fa-solid fa-shield-halved text-indigo-500 mr-1"></i>若 AI 服務忙碌，系統將自動啟用內建標準 ISO 催校範本 (Graceful Degradation)</span>
+                    <div class="flex space-x-2">
+                        <button type="button" onclick="closeAiNotificationModal()" class="px-4 py-2 rounded-lg text-xs font-semibold text-slate-600 hover:bg-slate-100">關閉</button>
+                        <button type="button" onclick="copyNotifyText()" class="px-5 py-2 rounded-lg text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm flex items-center space-x-1.5">
+                            <i class="fa-regular fa-copy"></i>
+                            <span>一鍵複製通知內容</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL 6: Firebase Authentication (Email/Password + Session Info) -->
+    <div id="authModal" class="fixed inset-0 z-50 hidden modal-backdrop flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-md w-full overflow-hidden">
+            <div class="bg-slate-900 text-white px-6 py-4 flex items-center justify-between">
+                <div class="flex items-center space-x-2">
+                    <i class="fa-solid fa-user-lock text-indigo-400"></i>
+                    <h3 class="text-base font-bold">ISO 儀校管理員身分驗證</h3>
+                </div>
+                <button onclick="closeAuthModal()" class="text-slate-400 hover:text-white">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
+            </div>
+
+            <div class="p-6 space-y-4">
+                <div class="bg-slate-50 p-3.5 rounded-xl border border-slate-200 text-xs space-y-1">
+                    <div class="text-slate-500">目前雲端驗證狀態：</div>
+                    <div id="authModalStatusText" class="font-bold text-emerald-700">已受 Firebase Auth 保護連線</div>
+                    <div id="authModalUidText" class="font-mono text-[11px] text-slate-600 break-all">UID: ---</div>
+                </div>
+
+                <!-- Google OAuth Sign-In Section -->
+                <div class="space-y-2">
+                    <button type="button" id="btnGoogleSignIn" onclick="handleGoogleSignIn()" class="w-full py-2.5 px-4 bg-white hover:bg-slate-50 text-slate-800 font-semibold text-xs rounded-xl border border-slate-300 shadow-sm transition flex items-center justify-center space-x-2.5">
+                        <svg class="w-4 h-4" viewBox="0 0 24 24">
+                            <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.17z"/>
+                            <path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.11-6.72-4.96H1.29v3.14C3.26 21.3 7.31 24 12 24z"/>
+                            <path fill="#FBBC05" d="M5.28 14.24c-.24-.72-.38-1.49-.38-2.24s.14-1.52.38-2.24V6.62H1.29C.47 8.24 0 10.06 0 12s.47 3.76 1.29 5.38l3.99-3.14z"/>
+                            <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.31 0 3.26 2.7 1.29 6.62l3.99 3.14c.95-2.85 3.6-4.96 6.72-4.96z"/>
+                        </svg>
+                        <span>使用 Google 帳號登入 / 綁定</span>
+                    </button>
+                </div>
+
+                <div class="relative flex py-1 items-center">
+                    <div class="flex-grow border-t border-slate-200"></div>
+                    <span class="flex-shrink mx-3 text-[11px] text-slate-400">或使用 Email 密碼登入</span>
+                    <div class="flex-grow border-t border-slate-200"></div>
+                </div>
+
+                <form onsubmit="handleEmailAuthSubmit(event)" class="space-y-3">
+                    <div>
+                        <label class="block text-[11px] font-semibold text-slate-600 mb-1">電子郵件 (Email)</label>
+                        <input type="email" id="authEmailInput" required placeholder="qc.lead@company-iso.com" class="w-full px-3.5 py-2 border border-slate-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                    </div>
+                    <div>
+                        <label class="block text-[11px] font-semibold text-slate-600 mb-1">密碼 (Password，至少 6 碼)</label>
+                        <input type="password" id="authPasswordInput" required minlength="6" placeholder="••••••••" class="w-full px-3.5 py-2 border border-slate-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                    </div>
+                    <div class="flex items-center justify-between pt-2">
+                        <button type="button" onclick="handleSignOutOrReset()" class="text-xs text-rose-600 hover:underline font-medium">登出 / 切換回預設身分</button>
+                        <button type="submit" id="btnEmailAuthSubmit" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-lg shadow-sm">Email 登入 / 註冊</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Custom Confirm Modal (No native confirm/alert allowed) -->
+    <div id="customConfirmModal" class="fixed inset-0 z-50 hidden modal-backdrop flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-sm w-full p-6 space-y-4">
+            <div class="flex items-center space-x-3">
+                <div class="w-10 h-10 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center shrink-0">
+                    <i class="fa-solid fa-triangle-exclamation"></i>
+                </div>
+                <div>
+                    <h4 id="confirmTitle" class="text-sm font-bold text-slate-900">確認操作</h4>
+                    <p id="confirmMessage" class="text-xs text-slate-600 mt-1">您確定要執行此操作嗎？</p>
+                </div>
+            </div>
+            <div class="flex justify-end space-x-2 pt-2">
+                <button id="confirmCancelBtn" class="px-4 py-2 rounded-lg text-xs font-semibold text-slate-600 hover:bg-slate-100">取消</button>
+                <button id="confirmOkBtn" class="px-4 py-2 rounded-lg text-xs font-semibold bg-rose-600 hover:bg-rose-700 text-white">確認執行</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notification Container -->
+    <div id="toastContainer" class="fixed bottom-5 right-5 z-50 space-y-2 max-w-sm w-full pointer-events-none"></div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import {
+            getAuth,
+            signInAnonymously,
+            signInWithCustomToken,
+            onAuthStateChanged,
+            signInWithEmailAndPassword,
+            createUserWithEmailAndPassword,
+            GoogleAuthProvider,
+            signInWithPopup,
+            signOut
+        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import {
+            getFirestore,
+            doc,
+            setDoc,
+            addDoc,
+            updateDoc,
+            deleteDoc,
+            collection,
+            onSnapshot,
+            serverTimestamp
+        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // ============================================================================
+        // 1. GLOBAL STATE & CONFIGURATION
+        // ============================================================================
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'iso-calibration-app';
+        let db = null;
+        let auth = null;
+        let currentUser = null;
+        let unsubscribeEquipment = null;
+        let unsubscribeLogs = null;
+
+        // Application State
+        let equipmentList = [];
+        let calibrationLogsList = [];
+        let activeFilterTab = 'ALL'; // ALL | UPCOMING | IN_CALIBRATION | SUSPENDED
+        let currentNotifyFormat = 'LINE'; // LINE | EMAIL
+        let selectedOcrImageBase64 = null;
+        let selectedOcrImageMime = null;
+
+        // ============================================================================
+        // 2. DATE ARITHMETIC & ISO STATE MACHINE ENGINE (PRD Section 3.1 & 7)
+        // ============================================================================
+
+        /**
+         * Returns today's date string in YYYY-MM-DD (local timezone).
+         */
+        function getTodayDateString() {
+            const now = new Date();
+            const year = now.getFullYear();
+            const month = String(now.getMonth() + 1).padStart(2, '0');
+            const day = String(now.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+        }
+
+        /**
+         * Leap-year and End-of-Month safe month addition (PRD Section 7 Edge Case #1).
+         * Example: 2024-02-29 + 12 months -> 2025-02-28 (avoids March overflow or NaN).
+         */
+        function addMonthsEndOfMonthSafe(dateStr, monthsToAdd) {
+            if (!dateStr) return getTodayDateString();
+            const parts = dateStr.split('-').map(Number);
+            if (parts.length !== 3 || parts.some(isNaN)) return getTodayDateString();
+
+            const [year, month, day] = parts;
+            const cycle = parseInt(monthsToAdd, 10) || 12;
+
+            // Calculate target year and month (0-indexed month)
+            const totalMonths = (month - 1) + cycle;
+            const targetYear = year + Math.floor(totalMonths / 12);
+            const targetMonth = ((totalMonths % 12) + 12) % 12;
+
+            // Find last valid day of target month
+            const maxDayInTargetMonth = new Date(targetYear, targetMonth + 1, 0).getDate();
+            const clampedDay = Math.min(day, maxDayInTargetMonth);
+
+            const yyyy = targetYear;
+            const mm = String(targetMonth + 1).padStart(2, '0');
+            const dd = String(clampedDay).padStart(2, '0');
+            return `${yyyy}-${mm}-${dd}`;
+        }
+
+        /**
+         * Calculates exact calendar day difference: NextDueDate - Today
+         */
+        function calculateDaysRemaining(nextDueDateStr) {
+            if (!nextDueDateStr) return 0;
+            const todayParts = getTodayDateString().split('-').map(Number);
+            const dueParts = nextDueDateStr.split('-').map(Number);
+            if (dueParts.length !== 3) return 0;
+
+            const todayUtc = Date.UTC(todayParts[0], todayParts[1] - 1, todayParts[2]);
+            const dueUtc = Date.UTC(dueParts[0], dueParts[1] - 1, dueParts[2]);
+            return Math.round((dueUtc - todayUtc) / (1000 * 60 * 60 * 24));
+        }
+
+        /**
+         * Core Calibration State Machine Engine (PRD Section 3.1, 5.1, and 7):
+         * Evaluates effective status and badges dynamically.
+         * - Priority 1: If explicitly marked as FAIL verification -> SUSPENDED (locked)
+         * - Priority 2: If status === 'IN_CALIBRATION' -> remains IN_CALIBRATION,
+         *               but if daysRemaining < 0, flags `isOverdueInCal = true` (PRD Edge Case #6: 外校逾期)
+         * - Priority 3: If daysRemaining <= 0 (due today or overdue and not returned) -> SUSPENDED (逾期停用)
+         * - Priority 4: If daysRemaining > 0 && daysRemaining <= 14 -> UPCOMING (14天內即將到期)
+         * - Priority 5: If daysRemaining > 14 -> NORMAL (正常)
+         */
+        function evaluateEquipmentState(eq) {
+            const daysRemaining = calculateDaysRemaining(eq.nextDueDate);
+
+            // Edge Case #6: Already sent to external/internal calibration
+            if (eq.status === 'IN_CALIBRATION') {
+                const isOverdueInCal = daysRemaining < 0;
+                return {
+                    effectiveStatus: 'IN_CALIBRATION',
+                    daysRemaining,
+                    isOverdueInCal,
+                    isFailedLock: false
+                };
+            }
+
+            // Edge Case #2: Locked as SUSPENDED due to FAIL calibration result
+            if (eq.lastResult === 'FAIL' && eq.status === 'SUSPENDED') {
+                return {
+                    effectiveStatus: 'SUSPENDED',
+                    daysRemaining,
+                    isOverdueInCal: false,
+                    isFailedLock: true
+                };
+            }
+
+            // Standard Date-driven State Transitions
+            if (daysRemaining <= 0) {
+                return {
+                    effectiveStatus: 'SUSPENDED',
+                    daysRemaining,
+                    isOverdueInCal: false,
+                    isFailedLock: false
+                };
+            } else if (daysRemaining <= 14) {
+                return {
+                    effectiveStatus: 'UPCOMING',
+                    daysRemaining,
+                    isOverdueInCal: false,
+                    isFailedLock: false
+                };
+            } else {
+                return {
+                    effectiveStatus: 'NORMAL',
+                    daysRemaining,
+                    isOverdueInCal: false,
+                    isFailedLock: false
+                };
+            }
+        }
+
+        // ============================================================================
+        // 3. UI TOAST & CUSTOM CONFIRM DIALOG
+        // ============================================================================
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toastContainer');
+            const toast = document.createElement('div');
+            const colorMap = {
+                success: 'bg-emerald-900 border-emerald-500 text-white',
+                warning: 'bg-amber-900 border-amber-500 text-white',
+                error: 'bg-rose-900 border-rose-500 text-white',
+                info: 'bg-slate-900 border-indigo-500 text-white'
+            };
+            const iconMap = {
+                success: 'fa-circle-check text-emerald-400',
+                warning: 'fa-triangle-exclamation text-amber-400',
+                error: 'fa-circle-xmark text-rose-400',
+                info: 'fa-circle-info text-indigo-400'
+            };
+
+            toast.className = `pointer-events-auto flex items-start space-x-3 px-4 py-3 rounded-xl shadow-xl border-l-4 text-xs transition-all duration-300 ${colorMap[type] || colorMap.info}`;
+            toast.innerHTML = `
+                <i class="fa-solid ${iconMap[type] || iconMap.info} text-sm mt-0.5"></i>
+                <div class="flex-1 leading-relaxed font-medium">${message}</div>
+            `;
+            container.appendChild(toast);
+
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                toast.style.transform = 'translateY(8px)';
+                setTimeout(() => toast.remove(), 300);
+            }, 4000);
+        }
+
+        function showCustomConfirm(title, message, onConfirm) {
+            const modal = document.getElementById('customConfirmModal');
+            document.getElementById('confirmTitle').textContent = title;
+            document.getElementById('confirmMessage').textContent = message;
+            modal.classList.remove('hidden');
+
+            const okBtn = document.getElementById('confirmOkBtn');
+            const cancelBtn = document.getElementById('confirmCancelBtn');
+
+            const cleanUp = () => {
+                modal.classList.add('hidden');
+                okBtn.onclick = null;
+                cancelBtn.onclick = null;
+            };
+
+            okBtn.onclick = () => {
+                cleanUp();
+                onConfirm();
+            };
+            cancelBtn.onclick = cleanUp;
+        }
+
+        // ============================================================================
+        // 4. FIREBASE INITIALIZATION & REAL-TIME LISTENERS (RULE 1, 2, 3 COMPLIANT)
+        // ============================================================================
+        const customFirebaseConfig = {
+            apiKey: "AIzaSyDUvE_JmWHPyeuJsG38tlbW9mh0yYJF_Dc",
+            authDomain: "calibration-4f698.firebaseapp.com",
+            projectId: "calibration-4f698",
+            storageBucket: "calibration-4f698.firebasestorage.app",
+            messagingSenderId: "507339647819",
+            appId: "1:507339647819:web:0150df81898091e66b56ce",
+            measurementId: "G-K0L7FWMPYM"
+        };
+
+        async function initFirebaseSystem() {
+            try {
+                const firebaseConfig = customFirebaseConfig;
+                const app = initializeApp(firebaseConfig);
+                auth = getAuth(app);
+                db = getFirestore(app);
+
+                // RULE 3: Authenticate FIRST before any Firestore operation
+                try {
+                    if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                        await signInWithCustomToken(auth, __initial_auth_token);
+                    } else {
+                        await signInAnonymously(auth);
+                    }
+                } catch (authErr) {
+                    console.warn('預設驗證退場，嘗試匿名登入或等待管理員 Email 登入:', authErr);
+                    try {
+                        await signInAnonymously(auth);
+                    } catch (anonErr) {
+                        console.warn('匿名登入未開啟或受限，請點擊右上角「帳號管理」使用 Email 登入:', anonErr);
+                        showToast('請點擊右上角「帳號管理」使用 Email 註冊或登入您的 Firebase 專案', 'info');
+                    }
+                }
+
+                onAuthStateChanged(auth, (user) => {
+                    currentUser = user;
+                    updateAuthHeaderUI(user);
+                    if (user) {
+                        setupFirestoreSubscriptions();
+                    }
+                });
+            } catch (err) {
+                console.error('Firebase initialization error:', err);
+                showToast('雲端連線初始化異常，已切換為本地展示模式', 'warning');
+                seedLocalFallbackData();
+            }
+        }
+
+        function updateAuthHeaderUI(user) {
+            const dot = document.getElementById('dbStatusDot');
+            const avatarImg = document.getElementById('userAvatarImg');
+            const emailSpan = document.getElementById('userDisplayEmail');
+            const uidSpan = document.getElementById('userFullUid');
+            const modalStatus = document.getElementById('authModalStatusText');
+            const modalUid = document.getElementById('authModalUidText');
+
+            if (user) {
+                dot.className = 'w-2 h-2 rounded-full bg-emerald-400';
+                if (user.photoURL) {
+                    avatarImg.src = user.photoURL;
+                    avatarImg.classList.remove('hidden');
+                } else {
+                    avatarImg.classList.add('hidden');
+                }
+                const displayIdentity = user.displayName
+                    ? `${user.displayName} (${user.email || 'Google'})`
+                    : (user.email ? user.email : '陳品管 (QC Lead 驗證連線)');
+                emailSpan.textContent = displayIdentity;
+                uidSpan.textContent = `UID: ${user.uid}`;
+                uidSpan.onclick = () => {
+                    copyTextToClipboard(user.uid);
+                    showToast('已複製完整使用者 UID', 'info');
+                };
+                modalStatus.textContent = user.email
+                    ? `已透過帳號驗證登入 (${displayIdentity})`
+                    : '已透過安全驗證連線 (ISO QC Session)';
+                modalUid.textContent = `完整 UID: ${user.uid}`;
+            } else {
+                dot.className = 'w-2 h-2 rounded-full bg-rose-500';
+                avatarImg.classList.add('hidden');
+                emailSpan.textContent = '未登入';
+                uidSpan.textContent = 'UID: ---';
+            }
+        }
+
+        function setupFirestoreSubscriptions() {
+            if (!currentUser || !db) return;
+
+            if (unsubscribeEquipment) unsubscribeEquipment();
+            if (unsubscribeLogs) unsubscribeLogs();
+
+            // RULE 1: Strict public data collection paths
+            const eqColRef = collection(db, 'artifacts', appId, 'public', 'data', 'equipment');
+            const logsColRef = collection(db, 'artifacts', appId, 'public', 'data', 'calibration_logs');
+
+            // RULE 2: Simple collection query without orderBy/where; sort/filter in memory
+            unsubscribeEquipment = onSnapshot(
+                eqColRef,
+                (snapshot) => {
+                    const items = [];
+                    snapshot.forEach((docSnap) => {
+                        items.push({ id: docSnap.id, ...docSnap.data() });
+                    });
+                    // Sort in JS memory: Urgent / smallest daysRemaining first
+                    items.sort((a, b) => {
+                        const daysA = calculateDaysRemaining(a.nextDueDate);
+                        const daysB = calculateDaysRemaining(b.nextDueDate);
+                        return daysA - daysB;
+                    });
+                    equipmentList = items;
+                    populateDepartmentFilter();
+                    renderDashboardAndTable();
+                },
+                (error) => {
+                    console.error('Equipment snapshot error:', error);
+                    showToast('讀取儀校設備資料發生錯誤', 'error');
+                }
+            );
+
+            unsubscribeLogs = onSnapshot(
+                logsColRef,
+                (snapshot) => {
+                    const logs = [];
+                    snapshot.forEach((docSnap) => {
+                        logs.push({ id: docSnap.id, ...docSnap.data() });
+                    });
+                    // Sort logs newest first in JS memory
+                    logs.sort((a, b) => (b.calDate || '').localeCompare(a.calDate || ''));
+                    calibrationLogsList = logs;
+                },
+                (error) => {
+                    console.error('Calibration logs snapshot error:', error);
+                }
+            );
+        }
+
+        // ============================================================================
+        // 5. DASHBOARD KPI & TABLE RENDERING
+        // ============================================================================
+        function populateDepartmentFilter() {
+            const deptSelect = document.getElementById('deptFilter');
+            const currentVal = deptSelect.value;
+            const depts = Array.from(new Set(equipmentList.map(e => e.department).filter(Boolean))).sort();
+
+            deptSelect.innerHTML = '<option value="ALL">所有保管單位</option>' +
+                depts.map(d => `<option value="${escapeHtml(d)}">${escapeHtml(d)}</option>`).join('');
+
+            if (depts.includes(currentVal)) {
+                deptSelect.value = currentVal;
+            }
+        }
+
+        function renderDashboardAndTable() {
+            let total = equipmentList.length;
+            let normalCount = 0;
+            let upcomingCount = 0;
+            let inCalCount = 0;
+            let inCalOverdueCount = 0;
+            let suspendedCount = 0;
+
+            equipmentList.forEach(eq => {
+                const state = evaluateEquipmentState(eq);
+                if (state.effectiveStatus === 'NORMAL') normalCount++;
+                else if (state.effectiveStatus === 'UPCOMING') upcomingCount++;
+                else if (state.effectiveStatus === 'IN_CALIBRATION') {
+                    inCalCount++;
+                    if (state.isOverdueInCal) inCalOverdueCount++;
+                } else if (state.effectiveStatus === 'SUSPENDED') {
+                    suspendedCount++;
+                }
+            });
+
+            // Update KPI Cards
+            document.getElementById('kpiTotal').textContent = total;
+            document.getElementById('kpiNormalSub').textContent = `正常可用: ${normalCount} 件`;
+            document.getElementById('kpiUpcoming').textContent = upcomingCount;
+            document.getElementById('kpiInCal').textContent = inCalCount;
+            document.getElementById('kpiInCalOverdueSub').textContent = `含外校逾期: ${inCalOverdueCount} 件`;
+            document.getElementById('kpiSuspended').textContent = suspendedCount;
+
+            // Update Filter Tab Badges
+            document.getElementById('badgeAll').textContent = total;
+            document.getElementById('badgeUpcoming').textContent = upcomingCount;
+            document.getElementById('badgeInCal').textContent = inCalCount;
+            document.getElementById('badgeSuspended').textContent = suspendedCount;
+
+            // Show/Hide High-Risk Overdue Alert Banner
+            const alertBanner = document.getElementById('overdueAlertBanner');
+            const alertText = document.getElementById('overdueAlertText');
+            if (suspendedCount > 0 || inCalOverdueCount > 0) {
+                alertBanner.classList.remove('hidden');
+                alertText.textContent = `目前共有 ${suspendedCount} 件設備處於「逾期/不合格停用 (SUSPENDED)」狀態、${inCalOverdueCount} 件「外校逾期未回」，請立即確認隔離管制或發送催校通知。`;
+            } else {
+                alertBanner.classList.add('hidden');
+            }
+
+            renderEquipmentTable();
+        }
+
+        window.setFilterTab = function(tabName) {
+            activeFilterTab = tabName;
+            document.querySelectorAll('.filter-tab-btn').forEach(btn => {
+                if (btn.getAttribute('data-tab') === tabName) {
+                    btn.className = 'filter-tab-btn px-3.5 py-2 rounded-lg text-xs font-semibold transition bg-slate-900 text-white shadow-sm';
+                } else {
+                    btn.className = 'filter-tab-btn px-3.5 py-2 rounded-lg text-xs font-semibold transition text-slate-600 hover:text-slate-900';
+                }
+            });
+            renderEquipmentTable();
+        };
+
+        window.renderEquipmentTable = function() {
+            const tbody = document.getElementById('equipmentTableBody');
+            const emptyBox = document.getElementById('emptyStateBox');
+            const searchQuery = (document.getElementById('searchInput').value || '').trim().toLowerCase();
+            const catFilter = document.getElementById('categoryFilter').value;
+            const deptFilter = document.getElementById('deptFilter').value;
+
+            const filtered = equipmentList.filter(eq => {
+                const state = evaluateEquipmentState(eq);
+
+                // Tab filter
+                if (activeFilterTab !== 'ALL' && state.effectiveStatus !== activeFilterTab) {
+                    return false;
+                }
+                // Category filter
+                if (catFilter !== 'ALL' && eq.category !== catFilter) {
+                    return false;
+                }
+                // Department filter
+                if (deptFilter !== 'ALL' && eq.department !== deptFilter) {
+                    return false;
+                }
+                // Search text filter
+                if (searchQuery) {
+                    const haystack = `${eq.assetNo || ''} ${eq.name || ''} ${eq.model || ''} ${eq.department || ''} ${eq.vendor || ''} ${eq.notes || ''}`.toLowerCase();
+                    if (!haystack.includes(searchQuery)) return false;
+                }
+                return true;
+            });
+
+            document.getElementById('tableCountInfo').textContent = `(顯示 ${filtered.length} / 共 ${equipmentList.length} 筆設備)`;
+
+            if (filtered.length === 0) {
+                tbody.innerHTML = '';
+                emptyBox.classList.remove('hidden');
+                return;
+            }
+            emptyBox.classList.add('hidden');
+
+            tbody.innerHTML = filtered.map(eq => {
+                const state = evaluateEquipmentState(eq);
+                const statusBadgeHtml = renderStatusBadge(state);
+                const daysBadgeHtml = renderDaysRemainingLabel(state);
+                const categoryBadge = eq.category === 'INTERNAL'
+                    ? '<span class="px-2 py-0.5 rounded bg-slate-100 text-slate-700 font-medium border border-slate-200">內校</span>'
+                    : '<span class="px-2 py-0.5 rounded bg-indigo-50 text-indigo-700 font-medium border border-indigo-200">外校</span>';
+
+                const rowHighlight = state.effectiveStatus === 'SUSPENDED'
+                    ? 'bg-rose-50/40 hover:bg-rose-50/80'
+                    : state.effectiveStatus === 'UPCOMING'
+                        ? 'bg-amber-50/30 hover:bg-amber-50/60'
+                        : 'hover:bg-slate-50';
+
+                return `
+                    <tr class="${rowHighlight} transition">
+                        <!-- Asset No -->
+                        <td class="py-3.5 px-4 align-top">
+                            <div class="font-mono font-bold text-slate-900 text-xs">${escapeHtml(eq.assetNo)}</div>
+                            <div class="text-[10px] text-slate-400 font-mono mt-0.5">ID: ${escapeHtml(eq.id.slice(0, 8))}</div>
+                        </td>
+
+                        <!-- Name & Model -->
+                        <td class="py-3.5 px-4 align-top">
+                            <div class="font-bold text-slate-800 text-xs">${escapeHtml(eq.name)}</div>
+                            <div class="text-[11px] text-slate-500 mt-0.5">${escapeHtml(eq.model || '-')}</div>
+                        </td>
+
+                        <!-- Department & Location Notes -->
+                        <td class="py-3.5 px-4 align-top">
+                            <div class="font-semibold text-slate-700">${escapeHtml(eq.department || '-')}</div>
+                            <div class="text-[11px] text-slate-500 mt-0.5 truncate max-w-[180px]" title="${escapeHtml(eq.notes || '')}">
+                                <i class="fa-solid fa-location-dot text-slate-400 mr-1"></i>${escapeHtml(eq.notes || '未填寫位置')}
+                            </div>
+                        </td>
+
+                        <!-- Category, Cycle & Vendor -->
+                        <td class="py-3.5 px-4 align-top">
+                            <div class="flex items-center space-x-1.5">
+                                ${categoryBadge}
+                                <span class="text-slate-600 font-medium">${eq.cycleMonths || 12}個月</span>
+                            </div>
+                            <div class="text-[11px] text-slate-500 mt-1 truncate max-w-[150px]" title="${escapeHtml(eq.vendor || '')}">
+                                <i class="fa-solid fa-building-user text-slate-400 mr-1"></i>${escapeHtml(eq.vendor || '-')}
+                            </div>
+                        </td>
+
+                        <!-- Last Cal Date -->
+                        <td class="py-3.5 px-4 align-top font-mono text-slate-600">
+                            ${escapeHtml(eq.lastCalDate || '-')}
+                        </td>
+
+                        <!-- Next Due Date & Days Remaining -->
+                        <td class="py-3.5 px-4 align-top">
+                            <div class="font-mono font-bold text-slate-800">${escapeHtml(eq.nextDueDate || '-')}</div>
+                            <div class="mt-0.5">${daysBadgeHtml}</div>
+                        </td>
+
+                        <!-- Status Badge -->
+                        <td class="py-3.5 px-4 align-top">
+                            ${statusBadgeHtml}
+                        </td>
+
+                        <!-- Actions -->
+                        <td class="py-3.5 px-4 align-top text-right">
+                            <div class="inline-flex items-center justify-end space-x-1">
+                                ${state.effectiveStatus !== 'IN_CALIBRATION' ? `
+                                    <button onclick="openSendCalModal('${eq.id}')" class="px-2.5 py-1.5 rounded-lg bg-sky-50 hover:bg-sky-100 text-sky-700 border border-sky-200 font-semibold transition" title="登記送外校或內校">
+                                        <i class="fa-solid fa-paper-plane mr-1"></i>送校
+                                    </button>
+                                ` : ''}
+                                <button onclick="openCompleteCalModal('${eq.id}')" class="px-2.5 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 font-semibold transition" title="驗收報告與 AI 智慧回填">
+                                    <i class="fa-solid fa-file-circle-check mr-1"></i>驗收
+                                </button>
+                                <button onclick="openHistoryLogsModal('${eq.id}')" class="p-1.5 rounded-lg text-slate-500 hover:text-indigo-600 hover:bg-slate-100 transition" title="檢視校驗歷史履歷">
+                                    <i class="fa-solid fa-clock-rotate-left"></i>
+                                </button>
+                                <button onclick="openEquipmentModal('${eq.id}')" class="p-1.5 rounded-lg text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition" title="編輯設備卡">
+                                    <i class="fa-solid fa-pen-to-square"></i>
+                                </button>
+                                <button onclick="confirmDeleteEquipment('${eq.id}')" class="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition" title="刪除設備">
+                                    <i class="fa-solid fa-trash-can"></i>
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        };
+
+        function renderStatusBadge(state) {
+            if (state.effectiveStatus === 'NORMAL') {
+                return `
+                    <span class="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-600 border border-emerald-200">
+                        <span class="w-1.5 h-1.5 rounded-full bg-emerald-600 mr-1.5"></span>正常 (NORMAL)
+                    </span>
+                `;
+            }
+            if (state.effectiveStatus === 'UPCOMING') {
+                return `
+                    <span class="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-50 text-amber-600 border border-amber-300">
+                        <i class="fa-solid fa-bell text-[10px] mr-1.5"></i>即將到期 (UPCOMING)
+                    </span>
+                `;
+            }
+            if (state.effectiveStatus === 'IN_CALIBRATION') {
+                return `
+                    <div class="space-y-1">
+                        <span class="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-bold bg-sky-50 text-sky-600 border border-sky-300">
+                            <i class="fa-solid fa-rotate fa-spin text-[10px] mr-1.5"></i>送校待回 (IN_CAL)
+                        </span>
+                        ${state.isOverdueInCal ? `
+                            <div class="text-[10px] font-bold text-rose-600 bg-rose-50 px-2 py-0.5 rounded border border-rose-200 inline-block">
+                                (Overdue 外校逾期)
+                            </div>
+                        ` : ''}
+                    </div>
+                `;
+            }
+            // SUSPENDED
+            return `
+                <div class="space-y-1">
+                    <span class="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-bold bg-rose-50 text-rose-600 border border-rose-300 shadow-sm">
+                        <i class="fa-solid fa-ban text-[10px] mr-1.5"></i>逾期停用 (SUSPENDED)
+                    </span>
+                    ${state.isFailedLock ? `
+                        <div class="text-[10px] font-bold text-rose-700 bg-rose-100 px-2 py-0.5 rounded inline-block">
+                            校驗不合格鎖定
+                        </div>
+                    ` : ''}
+                </div>
+            `;
+        }
+
+        function renderDaysRemainingLabel(state) {
+            const d = state.daysRemaining;
+            if (state.effectiveStatus === 'IN_CALIBRATION') {
+                if (d < 0) {
+                    return `<span class="text-[11px] font-semibold text-rose-600">超過原到期日 ${Math.abs(d)} 天</span>`;
+                }
+                return `<span class="text-[11px] text-sky-600 font-medium">距原到期日剩 ${d} 天</span>`;
+            }
+            if (d < 0) {
+                return `<span class="text-[11px] font-bold text-rose-600">已逾期 ${Math.abs(d)} 天 (禁止使用)</span>`;
+            }
+            if (d === 0) {
+                return `<span class="text-[11px] font-bold text-rose-600">今日到期 (強制停用)</span>`;
+            }
+            if (d <= 14) {
+                return `<span class="text-[11px] font-bold text-amber-600">僅剩 ${d} 天 (請安排送校)</span>`;
+            }
+            return `<span class="text-[11px] text-emerald-600 font-medium">剩餘 ${d} 天</span>`;
+        }
+
+        // ============================================================================
+        // 6. EQUIPMENT CRUD OPERATIONS & ASSET_NO UNIQUENESS CHECK (PRD Section 7 #5)
+        // ============================================================================
+        window.openEquipmentModal = function(eqId = null) {
+            const modal = document.getElementById('equipmentModal');
+            const warningBox = document.getElementById('duplicateAssetWarning');
+            warningBox.classList.add('hidden');
+
+            if (eqId) {
+                const eq = equipmentList.find(item => item.id === eqId);
+                if (!eq) return;
+                document.getElementById('eqModalTitle').textContent = `編輯儀校設備卡 (${eq.assetNo})`;
+                document.getElementById('eqDocId').value = eq.id;
+                document.getElementById('eqAssetNo').value = eq.assetNo || '';
+                document.getElementById('eqName').value = eq.name || '';
+                document.getElementById('eqModel').value = eq.model || '';
+                document.getElementById('eqDepartment').value = eq.department || '';
+                document.getElementById('eqCategory').value = eq.category || 'EXTERNAL';
+                document.getElementById('eqCycleMonths').value = String(eq.cycleMonths || 12);
+                document.getElementById('eqVendor').value = eq.vendor || '';
+                document.getElementById('eqLastCalDate').value = eq.lastCalDate || getTodayDateString();
+                document.getElementById('eqNextDueDate').value = eq.nextDueDate || addMonthsEndOfMonthSafe(getTodayDateString(), 12);
+                document.getElementById('eqNotes').value = eq.notes || '';
+            } else {
+                document.getElementById('eqModalTitle').textContent = '建立新儀校設備卡';
+                document.getElementById('equipmentForm').reset();
+                document.getElementById('eqDocId').value = '';
+                const today = getTodayDateString();
+                document.getElementById('eqLastCalDate').value = today;
+                document.getElementById('eqCycleMonths').value = '12';
+                document.getElementById('eqNextDueDate').value = addMonthsEndOfMonthSafe(today, 12);
+            }
+
+            handleCategoryChange();
+            modal.classList.remove('hidden');
+        };
+
+        window.closeEquipmentModal = function() {
+            document.getElementById('equipmentModal').classList.add('hidden');
+        };
+
+        window.handleCategoryChange = function() {
+            const cat = document.getElementById('eqCategory').value;
+            const label = document.getElementById('vendorFieldLabel');
+            const input = document.getElementById('eqVendor');
+            if (cat === 'INTERNAL') {
+                label.innerHTML = '內校負責人員 / 實驗室 <span class="text-rose-600">*</span>';
+                input.placeholder = '例如: 品管課 陳品管 (內校標準件追溯)';
+            } else {
+                label.innerHTML = '外校委外廠商 <span class="text-rose-600">*</span>';
+                input.placeholder = '例如: 精密量測檢驗中心 / SGS 實驗室';
+            }
+        };
+
+        window.recalculateModalNextDue = function() {
+            const lastDate = document.getElementById('eqLastCalDate').value;
+            const cycle = parseInt(document.getElementById('eqCycleMonths').value, 10) || 12;
+            if (lastDate) {
+                document.getElementById('eqNextDueDate').value = addMonthsEndOfMonthSafe(lastDate, cycle);
+            }
+        };
+
+        window.handleSaveEquipment = async function(e) {
+            e.preventDefault();
+            const docId = document.getElementById('eqDocId').value.trim();
+            const assetNo = document.getElementById('eqAssetNo').value.trim().toUpperCase();
+            const name = document.getElementById('eqName').value.trim();
+            const model = document.getElementById('eqModel').value.trim();
+            const department = document.getElementById('eqDepartment').value.trim();
+            const category = document.getElementById('eqCategory').value;
+            const cycleMonths = parseInt(document.getElementById('eqCycleMonths').value, 10) || 12;
+            const vendor = document.getElementById('eqVendor').value.trim();
+            const lastCalDate = document.getElementById('eqLastCalDate').value;
+            const nextDueDate = document.getElementById('eqNextDueDate').value;
+            const notes = document.getElementById('eqNotes').value.trim();
+
+            // PRD Section 7 Edge Case #5: Check duplicate assetNo before writing
+            const duplicate = equipmentList.find(item =>
+                (item.assetNo || '').toUpperCase() === assetNo && item.id !== docId
+            );
+            const warningBox = document.getElementById('duplicateAssetWarning');
+            if (duplicate) {
+                warningBox.classList.remove('hidden');
+                document.getElementById('duplicateAssetWarningText').textContent =
+                    `設備管理編碼「${assetNo}」已存在於【${duplicate.name}】！請使用唯一編碼以符合 ISO 追溯要求。`;
+                showToast(`拒絕寫入：設備編碼 ${assetNo} 重複`, 'error');
+                return;
+            }
+            warningBox.classList.add('hidden');
+
+            // Compute status based on nextDueDate
+            const days = calculateDaysRemaining(nextDueDate);
+            const computedStatus = days <= 0 ? 'SUSPENDED' : (days <= 14 ? 'UPCOMING' : 'NORMAL');
+
+            const saveBtn = document.getElementById('btnSaveEquipment');
+            saveBtn.disabled = true;
+            saveBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i>儲存中...';
+
+            const payload = {
+                assetNo,
+                name,
+                model,
+                category,
+                department,
+                cycleMonths,
+                lastCalDate,
+                nextDueDate,
+                status: computedStatus,
+                vendor,
+                notes,
+                updatedAt: new Date().toISOString(),
+                updatedBy: currentUser ? currentUser.uid : 'local_qc_user'
+            };
+
+            try {
+                if (db && currentUser) {
+                    if (docId) {
+                        const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'equipment', docId);
+                        await updateDoc(docRef, payload);
+                        showToast(`已更新設備【${assetNo} ${name}】`, 'success');
+                    } else {
+                        const newId = `EQ-${Date.now()}`;
+                        const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'equipment', newId);
+                        await setDoc(docRef, { id: newId, ...payload });
+                        showToast(`已新增設備【${assetNo} ${name}】`, 'success');
+                    }
+                } else {
+                    // Local fallback if offline
+                    if (docId) {
+                        const idx = equipmentList.findIndex(x => x.id === docId);
+                        if (idx > -1) equipmentList[idx] = { ...equipmentList[idx], ...payload };
+                    } else {
+                        equipmentList.push({ id: `EQ-${Date.now()}`, ...payload });
+                    }
+                    renderDashboardAndTable();
+                    showToast(`已儲存設備【${assetNo}】`, 'success');
+                }
+                closeEquipmentModal();
+            } catch (err) {
+                console.error('Save equipment error:', err);
+                showToast('儲存設備時發生錯誤，請檢查網路連線', 'error');
+            } finally {
+                saveBtn.disabled = false;
+                saveBtn.innerHTML = '<i class="fa-solid fa-floppy-disk mr-1"></i><span>儲存設備資料</span>';
+            }
+        };
+
+        window.confirmDeleteEquipment = function(eqId) {
+            const eq = equipmentList.find(item => item.id === eqId);
+            if (!eq) return;
+            showCustomConfirm(
+                '確認刪除儀校設備',
+                `您確定要從台帳中刪除【${eq.assetNo} - ${eq.name}】嗎？此動作無法復原。`,
+                async () => {
+                    try {
+                        if (db && currentUser) {
+                            const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'equipment', eqId);
+                            await deleteDoc(docRef);
+                        } else {
+                            equipmentList = equipmentList.filter(x => x.id !== eqId);
+                            renderDashboardAndTable();
+                        }
+                        showToast(`已刪除設備 ${eq.assetNo}`, 'info');
+                    } catch (err) {
+                        console.error('Delete error:', err);
+                        showToast('刪除失敗', 'error');
+                    }
+                }
+            );
+        };
+
+        // ============================================================================
+        // 7. SEND TO CALIBRATION & COMPLETE CALIBRATION (WITH GEMINI AI OCR)
+        // ============================================================================
+        window.openSendCalModal = function(eqId) {
+            const eq = equipmentList.find(x => x.id === eqId);
+            if (!eq) return;
+            document.getElementById('sendCalEqId').value = eq.id;
+            document.getElementById('sendCalAssetDisplay').textContent = `${eq.assetNo} (${eq.category === 'INTERNAL' ? '內校' : '外校'})`;
+            document.getElementById('sendCalNameDisplay').textContent = `${eq.name} — ${eq.model}`;
+            document.getElementById('sendCalDueDisplay').textContent = `原訂到期日: ${eq.nextDueDate}`;
+            document.getElementById('sendCalVendorInput').value = eq.vendor || '';
+            document.getElementById('sendCalNotesInput').value = eq.notes || '';
+            document.getElementById('sendCalModal').classList.remove('hidden');
+        };
+
+        window.closeSendCalModal = function() {
+            document.getElementById('sendCalModal').classList.add('hidden');
+        };
+
+        window.handleConfirmSendCal = async function(e) {
+            e.preventDefault();
+            const eqId = document.getElementById('sendCalEqId').value;
+            const vendor = document.getElementById('sendCalVendorInput').value.trim();
+            const notes = document.getElementById('sendCalNotesInput').value.trim();
+            const btn = document.getElementById('btnConfirmSendCal');
+            btn.disabled = true;
+
+            try {
+                const updatePayload = {
+                    status: 'IN_CALIBRATION',
+                    vendor,
+                    notes,
+                    updatedAt: new Date().toISOString(),
+                    updatedBy: currentUser ? currentUser.uid : 'local_qc_user'
+                };
+                if (db && currentUser) {
+                    const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'equipment', eqId);
+                    await updateDoc(docRef, updatePayload);
+                } else {
+                    const idx = equipmentList.findIndex(x => x.id === eqId);
+                    if (idx > -1) equipmentList[idx] = { ...equipmentList[idx], ...updatePayload };
+                    renderDashboardAndTable();
+                }
+                showToast('設備狀態已更新為「送校待回 (IN_CALIBRATION)」', 'info');
+                closeSendCalModal();
+            } catch (err) {
+                console.error('Send cal error:', err);
+                showToast('更新送校狀態失敗', 'error');
+            } finally {
+                btn.disabled = false;
+            }
+        };
+
+        // Complete Calibration Modal
+        window.openCompleteCalModal = function(eqId) {
+            const eq = equipmentList.find(x => x.id === eqId);
+            if (!eq) return;
+
+            document.getElementById('compEqId').value = eq.id;
+            document.getElementById('compAssetNo').textContent = eq.assetNo;
+            document.getElementById('compEqName').textContent = `${eq.name} (${eq.model})`;
+            document.getElementById('compCycleMonths').textContent = eq.cycleMonths || 12;
+
+            const today = getTodayDateString();
+            document.getElementById('compResult').value = 'PASS';
+            document.getElementById('compCalDate').value = today;
+            document.getElementById('compNextDueDate').value = addMonthsEndOfMonthSafe(today, eq.cycleMonths || 12);
+            document.getElementById('compNextDueDate').disabled = false;
+            document.getElementById('compCertNo').value = `CERT-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
+            document.getElementById('compCalibrator').value = eq.vendor || 'TAF 認證校正實驗室';
+            document.getElementById('aiReportRawText').value = '';
+            document.getElementById('failResultLockAlert').classList.add('hidden');
+            clearOcrImage();
+
+            document.getElementById('completeCalModal').classList.remove('hidden');
+        };
+
+        window.closeCompleteCalModal = function() {
+            document.getElementById('completeCalModal').classList.add('hidden');
+        };
+
+        window.recalculateCompNextDue = function() {
+            const eqId = document.getElementById('compEqId').value;
+            const eq = equipmentList.find(x => x.id === eqId);
+            const cycle = eq ? (eq.cycleMonths || 12) : 12;
+            const calDate = document.getElementById('compCalDate').value;
+            const result = document.getElementById('compResult').value;
+
+            if (result !== 'FAIL' && calDate) {
+                document.getElementById('compNextDueDate').value = addMonthsEndOfMonthSafe(calDate, cycle);
+            }
+        };
+
+        window.handleResultChangeInModal = function() {
+            const result = document.getElementById('compResult').value;
+            const failAlert = document.getElementById('failResultLockAlert');
+            const nextDueInput = document.getElementById('compNextDueDate');
+            const submitBtn = document.getElementById('btnSubmitCompleteCal');
+
+            if (result === 'FAIL') {
+                // PRD Section 7 Edge Case #2: Do not advance cycle on FAIL, lock as SUSPENDED
+                failAlert.classList.remove('hidden');
+                nextDueInput.value = getTodayDateString();
+                nextDueInput.disabled = true;
+                submitBtn.className = 'px-5 py-2 rounded-lg text-xs font-semibold bg-rose-600 hover:bg-rose-700 text-white shadow-sm transition flex items-center space-x-1.5';
+                submitBtn.innerHTML = '<i class="fa-solid fa-ban"></i><span>確認判定不合格並強制停用 (SUSPENDED)</span>';
+            } else {
+                failAlert.classList.add('hidden');
+                nextDueInput.disabled = false;
+                recalculateCompNextDue();
+                submitBtn.className = 'px-5 py-2 rounded-lg text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm transition flex items-center space-x-1.5';
+                submitBtn.innerHTML = '<i class="fa-solid fa-check-double"></i><span>確認驗收並寫入校驗履歷</span>';
+            }
+        };
+
+        window.fillSampleReportText = function(type) {
+            const eqId = document.getElementById('compEqId').value;
+            const eq = equipmentList.find(x => x.id === eqId);
+            const today = getTodayDateString();
+            const name = eq ? eq.name : '數位游標卡尺';
+            const asset = eq ? eq.assetNo : 'QC-CAL-042';
+
+            if (type === 'PASS') {
+                document.getElementById('aiReportRawText').value =
+                    `【TAF 校正報告摘要】報告編號：TAF-CAL-20261020-88A｜受校儀器：${name} (${asset})｜校驗執行日期：${today}｜校正實驗室：工研院量測技術發展中心｜量測結果：全量程器差值 +0.005mm，擴充不確定度 0.008mm (k=2)，符合廠內 ISO 允收規範 (±0.02mm)，綜合判定：合格 (PASS)。`;
+            } else {
+                document.getElementById('aiReportRawText').value =
+                    `【外校異常通知單】報告編號：NG-20261020-04｜受校儀器：${name} (${asset})｜檢測日期：${today}｜校驗機構：SGS 台灣檢驗科技｜說明：主軸測微感測器於 100mm 區段線性度偏移達 +0.08mm，超出允收標準 (±0.02mm) 且無法調校修復，判定結果：不合格 (FAIL)，建議立即停用報廢。`;
+            }
+        };
+
+        window.handleOcrImageSelect = function(event) {
+            const file = event.target.files?.[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const dataUrl = e.target.result;
+                const matches = dataUrl.match(/^data:(.+);base64,(.+)$/);
+                if (matches) {
+                    selectedOcrImageMime = matches[1];
+                    selectedOcrImageBase64 = matches[2];
+                    document.getElementById('ocrImageLabel').textContent = `已載入: ${file.name.slice(0, 16)}...`;
+                    document.getElementById('btnClearOcrImage').classList.remove('hidden');
+                }
+            };
+            reader.readAsDataURL(file);
+        };
+
+        window.clearOcrImage = function() {
+            selectedOcrImageBase64 = null;
+            selectedOcrImageMime = null;
+            document.getElementById('ocrImageInput').value = '';
+            document.getElementById('ocrImageLabel').textContent = '上傳報告圖片 (選填)';
+            document.getElementById('btnClearOcrImage').classList.add('hidden');
+        };
+
+        // ============================================================================
+        // 8. GEMINI API INTEGRATION (OCR EXTRACT & NOTIFICATION DRAFTING WITH BACKOFF)
+        // ============================================================================
+        async function callGeminiWithRetry(payload, maxRetries = 3) {
+            const apiKey = "";
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`;
+            let delay = 1000;
+
+            for (let attempt = 0; attempt < maxRetries; attempt++) {
+                try {
+                    const response = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}`);
+                    }
+                    return await response.json();
+                } catch (err) {
+                    if (attempt === maxRetries - 1) throw err;
+                    await new Promise(r => setTimeout(r, delay));
+                    delay *= 2;
+                }
+            }
+        }
+
+        window.runGeminiReportExtract = async function() {
+            const rawText = document.getElementById('aiReportRawText').value.trim();
+            if (!rawText && !selectedOcrImageBase64) {
+                showToast('請先貼上校驗報告文字摘要，或點選上方「載入合格報告範例」', 'warning');
+                return;
+            }
+
+            const btn = document.getElementById('btnRunAiExtract');
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i><span>Gemini AI 正在解析報告...</span>';
+
+            try {
+                const parts = [
+                    {
+                        text: `你是一位專業的 ISO 17025 / ISO 9001 儀校工程師助理。請從以下校驗報告內容或圖片中擷取結構化資訊。若未明確提及日期，請預設使用今日 ${getTodayDateString()}。
+                        校驗結果 result 必須嚴格為 "PASS" (合格)、"CONDITIONAL" (限制允收/特採) 或 "FAIL" (不合格/報廢) 三者之一。
+                        報告內容：\n${rawText || '(請見附加圖片)'}`
+                    }
+                ];
+
+                if (selectedOcrImageBase64 && selectedOcrImageMime) {
+                    parts.push({
+                        inlineData: {
+                            mimeType: selectedOcrImageMime,
+                            data: selectedOcrImageBase64
+                        }
+                    });
+                }
+
+                const payload = {
+                    contents: [{ role: 'user', parts }],
+                    generationConfig: {
+                        responseMimeType: "application/json",
+                        responseSchema: {
+                            type: "OBJECT",
+                            properties: {
+                                calDate: { type: "STRING", description: "YYYY-MM-DD 格式的校驗實施日期" },
+                                result: { type: "STRING", enum: ["PASS", "CONDITIONAL", "FAIL"] },
+                                certNo: { type: "STRING", description: "報告或證書編號" },
+                                calibrator: { type: "STRING", description: "執行校驗的實驗室、機構或人員名稱" }
+                            },
+                            propertyOrdering: ["calDate", "result", "certNo", "calibrator"]
+                        }
+                    }
+                };
+
+                const res = await callGeminiWithRetry(payload);
+                const jsonText = res?.candidates?.[0]?.content?.parts?.[0]?.text;
+                if (!jsonText) throw new Error('Empty AI response');
+
+                const parsed = JSON.parse(jsonText);
+
+                if (parsed.calDate && /^\d{4}-\d{2}-\d{2}$/.test(parsed.calDate)) {
+                    document.getElementById('compCalDate').value = parsed.calDate;
+                }
+                if (parsed.result && ['PASS', 'CONDITIONAL', 'FAIL'].includes(parsed.result)) {
+                    document.getElementById('compResult').value = parsed.result;
+                }
+                if (parsed.certNo) {
+                    document.getElementById('compCertNo').value = parsed.certNo;
+                }
+                if (parsed.calibrator) {
+                    document.getElementById('compCalibrator').value = parsed.calibrator;
+                }
+
+                handleResultChangeInModal();
+                showToast('Gemini AI 解析完成！已自動回填校驗欄位並推算下期日期', 'success');
+            } catch (err) {
+                // PRD Section 7 Edge Case #3: Graceful Degradation when AI service is unavailable
+                console.warn('Gemini fallback triggered:', err);
+                const fallbackRegexDate = rawText.match(/(\d{4})[-/年](\d{1,2})[-/月](\d{1,2})/);
+                if (fallbackRegexDate) {
+                    const y = fallbackRegexDate[1];
+                    const m = String(fallbackRegexDate[2]).padStart(2, '0');
+                    const d = String(fallbackRegexDate[3]).padStart(2, '0');
+                    document.getElementById('compCalDate').value = `${y}-${m}-${d}`;
+                }
+                if (/不合格|FAIL|NG|報廢/i.test(rawText)) {
+                    document.getElementById('compResult').value = 'FAIL';
+                } else if (/限制|特採|CONDITIONAL/i.test(rawText)) {
+                    document.getElementById('compResult').value = 'CONDITIONAL';
+                } else {
+                    document.getElementById('compResult').value = 'PASS';
+                }
+                const certMatch = rawText.match(/([A-Z]{2,6}-[A-Z0-9-]{4,20})/i);
+                if (certMatch) document.getElementById('compCertNo').value = certMatch[1];
+
+                handleResultChangeInModal();
+                showToast('AI 服務暫時無法連線，已透過本地智慧規則完成欄位解析與手動模式切換', 'warning');
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fa-solid fa-bolt"></i><span>AI 自動解析並帶入下方表單</span>';
+            }
+        };
+
+        window.handleConfirmCompleteCal = async function(e) {
+            e.preventDefault();
+            const eqId = document.getElementById('compEqId').value;
+            const eq = equipmentList.find(x => x.id === eqId);
+            if (!eq) return;
+
+            const result = document.getElementById('compResult').value;
+            const calDate = document.getElementById('compCalDate').value;
+            const nextDueDate = result === 'FAIL'
+                ? eq.nextDueDate // Do not advance nextDueDate on FAIL
+                : document.getElementById('compNextDueDate').value;
+            const certNo = document.getElementById('compCertNo').value.trim();
+            const calibrator = document.getElementById('compCalibrator').value.trim();
+            const rawAiExtractedText = document.getElementById('aiReportRawText').value.trim();
+
+            // PRD Section 7 Edge Case #2: Lock as SUSPENDED if FAIL
+            const newStatus = result === 'FAIL'
+                ? 'SUSPENDED'
+                : (calculateDaysRemaining(nextDueDate) <= 14 ? 'UPCOMING' : 'NORMAL');
+
+            const submitBtn = document.getElementById('btnSubmitCompleteCal');
+            submitBtn.disabled = true;
+
+            const logId = `LOG-${calDate.replace(/-/g, '')}-${Math.floor(100 + Math.random() * 900)}`;
+            const logPayload = {
+                id: logId,
+                equipmentId: eq.id,
+                assetNo: eq.assetNo,
+                calDate,
+                result,
+                certNo,
+                calibrator,
+                rawAiExtractedText,
+                createdAt: new Date().toISOString(),
+                operatorUid: currentUser ? currentUser.uid : 'local_qc_user'
+            };
+
+            const eqUpdatePayload = {
+                lastCalDate: calDate,
+                nextDueDate,
+                status: newStatus,
+                lastResult: result,
+                vendor: calibrator,
+                updatedAt: new Date().toISOString(),
+                updatedBy: currentUser ? currentUser.uid : 'local_qc_user'
+            };
+
+            try {
+                if (db && currentUser) {
+                    const logRef = doc(db, 'artifacts', appId, 'public', 'data', 'calibration_logs', logId);
+                    await setDoc(logRef, logPayload);
+
+                    const eqRef = doc(db, 'artifacts', appId, 'public', 'data', 'equipment', eq.id);
+                    await updateDoc(eqRef, eqUpdatePayload);
+                } else {
+                    calibrationLogsList.unshift(logPayload);
+                    const idx = equipmentList.findIndex(x => x.id === eq.id);
+                    if (idx > -1) equipmentList[idx] = { ...equipmentList[idx], ...eqUpdatePayload };
+                    renderDashboardAndTable();
+                }
+
+                if (result === 'FAIL') {
+                    showToast(`【高風險管制】設備 ${eq.assetNo} 驗收不合格 (FAIL)，已強制鎖定為「停用 SUSPENDED」！`, 'error');
+                } else {
+                    showToast(`已完成 ${eq.assetNo} 驗收並推進下次校驗日為 ${nextDueDate}`, 'success');
+                }
+                closeCompleteCalModal();
+            } catch (err) {
+                console.error('Complete calibration error:', err);
+                showToast('寫入校驗紀錄時發生錯誤', 'error');
+            } finally {
+                submitBtn.disabled = false;
+            }
+        };
+
+        // ============================================================================
+        // 9. CALIBRATION HISTORY LOGS MODAL
+        // ============================================================================
+        window.openHistoryLogsModal = function(eqId) {
+            const eq = equipmentList.find(x => x.id === eqId);
+            if (!eq) return;
+
+            document.getElementById('histModalTitle').textContent = `校驗歷史履歷 — ${eq.name}`;
+            document.getElementById('histModalSubtitle').textContent = `設備管理編碼: ${eq.assetNo} ｜ 廠牌型號: ${eq.model} ｜ 週期: ${eq.cycleMonths}個月`;
+
+            const container = document.getElementById('historyLogsList');
+            const logs = calibrationLogsList.filter(l => l.equipmentId === eq.id || l.assetNo === eq.assetNo);
+
+            if (logs.length === 0) {
+                container.innerHTML = `
+                    <div class="text-center py-10 bg-slate-50 rounded-xl border border-slate-200 text-xs text-slate-500">
+                        <i class="fa-regular fa-folder-open text-2xl text-slate-400 mb-2 block"></i>
+                        尚無此設備的歷史校驗驗收紀錄。點擊列表的「驗收」即可新增第一筆紀錄。
+                    </div>
+                `;
+            } else {
+                container.innerHTML = logs.map(log => {
+                    const badge = log.result === 'PASS'
+                        ? '<span class="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800">PASS 合格</span>'
+                        : log.result === 'CONDITIONAL'
+                            ? '<span class="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-100 text-amber-800">CONDITIONAL 允收</span>'
+                            : '<span class="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-rose-100 text-rose-800">FAIL 不合格停用</span>';
+
+                    return `
+                        <div class="p-4 rounded-xl border border-slate-200 bg-slate-50/70 space-y-2">
+                            <div class="flex flex-wrap items-center justify-between gap-2">
+                                <div class="flex items-center space-x-2">
+                                    ${badge}
+                                    <span class="font-mono font-bold text-xs text-slate-800">校驗日: ${escapeHtml(log.calDate)}</span>
+                                    <span class="text-xs text-slate-500 font-mono">證書編號: ${escapeHtml(log.certNo || '-')}</span>
+                                </div>
+                                <span class="text-[11px] text-slate-500">校驗單位: <strong>${escapeHtml(log.calibrator || '-')}</strong></span>
+                            </div>
+                            ${log.rawAiExtractedText ? `
+                                <div class="text-[11px] text-slate-600 bg-white p-2.5 rounded-lg border border-slate-200 font-mono">
+                                    <span class="text-indigo-600 font-semibold">[報告摘要]</span> ${escapeHtml(log.rawAiExtractedText)}
+                                </div>
+                            ` : ''}
+                            <div class="text-[10px] text-slate-400 font-mono flex justify-between">
+                                <span>紀錄單號: ${escapeHtml(log.id)}</span>
+                                <span>簽核人員 UID: ${escapeHtml(log.operatorUid || '-')}</span>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            }
+
+            document.getElementById('historyLogsModal').classList.remove('hidden');
+        };
+
+        window.closeHistoryLogsModal = function() {
+            document.getElementById('historyLogsModal').classList.add('hidden');
+        };
+
+        // ============================================================================
+        // 10. AI CALIBRATION REMINDER GENERATOR & CLIPBOARD EXPORT
+        // ============================================================================
+        window.openAiNotificationModal = function() {
+            document.getElementById('aiNotifyModal').classList.remove('hidden');
+            populateDefaultNotificationTemplate();
+        };
+
+        window.closeAiNotificationModal = function() {
+            document.getElementById('aiNotifyModal').classList.add('hidden');
+        };
+
+        window.switchNotifyFormat = function(fmt) {
+            currentNotifyFormat = fmt;
+            const btnLine = document.getElementById('btnFmtLine');
+            const btnEmail = document.getElementById('btnFmtEmail');
+            if (fmt === 'LINE') {
+                btnLine.className = 'px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-600 text-white';
+                btnEmail.className = 'px-3 py-1.5 rounded-lg text-xs font-semibold bg-white text-slate-700 border border-slate-300';
+            } else {
+                btnEmail.className = 'px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-600 text-white';
+                btnLine.className = 'px-3 py-1.5 rounded-lg text-xs font-semibold bg-white text-slate-700 border border-slate-300';
+            }
+            populateDefaultNotificationTemplate();
+        };
+
+        function getActionableEquipmentGroups() {
+            const suspended = [];
+            const upcoming = [];
+            const inCalOverdue = [];
+
+            equipmentList.forEach(eq => {
+                const st = evaluateEquipmentState(eq);
+                if (st.effectiveStatus === 'SUSPENDED') suspended.push({ ...eq, days: st.daysRemaining });
+                else if (st.effectiveStatus === 'UPCOMING') upcoming.push({ ...eq, days: st.daysRemaining });
+                else if (st.effectiveStatus === 'IN_CALIBRATION' && st.isOverdueInCal) inCalOverdue.push({ ...eq, days: st.daysRemaining });
+            });
+
+            return { suspended, upcoming, inCalOverdue };
+        }
+
+        function populateDefaultNotificationTemplate() {
+            const { suspended, upcoming, inCalOverdue } = getActionableEquipmentGroups();
+            const today = getTodayDateString();
+            const output = document.getElementById('aiNotifyOutput');
+
+            const suspendedLines = suspended.length > 0
+                ? suspended.map(e => `• [${e.assetNo}] ${e.name} (${e.department}) — 到期日: ${e.nextDueDate} (已逾期 ${Math.abs(e.days)} 天，請立即停用隔離！)`).join('\n')
+                : '• (目前無逾期停用設備)';
+
+            const upcomingLines = upcoming.length > 0
+                ? upcoming.map(e => `• [${e.assetNo}] ${e.name} (${e.department}) — 到期日: ${e.nextDueDate} (剩餘 ${e.days} 天，請於本週送交品管課)`).join('\n')
+                : '• (目前無 14 天內即將到期設備)';
+
+            const inCalLines = inCalOverdue.length > 0
+                ? inCalOverdue.map(e => `• [${e.assetNo}] ${e.name} (委外廠商: ${e.vendor}) — 原到期日: ${e.nextDueDate} (外校逾期 ${Math.abs(e.days)} 天，請催促返還)`).join('\n')
+                : '• (目前無外校逾期未回設備)';
+
+            if (currentNotifyFormat === 'LINE') {
+                output.value = `📢【ISO 儀校管理系統 — 催校與停用管制通知】
+📅 統計基準日：${today}
+👤 發送人：品管課 陳品管 (QC Lead)
+
+🚨 一、【逾期強制停用 (SUSPENDED)】共 ${suspended.length} 件
+(請現場主管立即確認張貼紅色「停用」標籤，嚴禁產線誤用！)
+${suspendedLines}
+
+⚠️ 二、【14天內即將到期預警 (UPCOMING)】共 ${upcoming.length} 件
+(請保管單位於到期前送交品管課安排內/外校)
+${upcomingLines}
+
+🚚 三、【外校逾期未回追蹤 (IN_CALIBRATION OVERDUE)】共 ${inCalOverdue.length} 件
+${inCalLines}
+
+請各單位配合 ISO 9001 / 17025 儀校稽核規範，感謝協助！`;
+            } else {
+                output.value = `主旨：【ISO 儀校稽核重要通知】廠內量測設備到期預警與逾期停用管制清單 (${today})
+
+各位部門主管與儀器保管人 您好：
+
+依據本公司 ISO 9001 / ISO 17025 量測設備管理程序書規定，品管課已完成今日 (${today}) 全廠儀校台帳自動盤點。以下設備需請貴單位立即配合辦理：
+
+------------------------------------------------------------------------
+1. 【高風險管制：逾期強制停用清單 (SUSPENDED)】(共 ${suspended.length} 件)
+說明：下列設備已逾有效校驗期限或驗收不合格，系統已強制轉為「停用」狀態。請立即隔離並張貼停用標籤，切勿於產線繼續使用，以免造成稽核重大缺失：
+${suspendedLines}
+
+2. 【14 天內即將到期預警清單 (UPCOMING)】(共 ${upcoming.length} 件)
+說明：下列設備將於兩週內到期，請保管人於本週五前送至品管課恆溫室辦理校驗：
+${upcomingLines}
+
+3. 【外校中逾期未回催辦清單】(共 ${inCalOverdue.length} 件)
+${inCalLines}
+------------------------------------------------------------------------
+
+若有任何排程疑問或需申請備用量具，請隨時與品管課聯繫。
+
+Best Regards,
+陳品管 (QC Lead / 儀校工程師)
+ISO 儀校管理系統自動簽核`;
+            }
+        }
+
+        window.generateAiNotification = async function() {
+            const { suspended, upcoming, inCalOverdue } = getActionableEquipmentGroups();
+            const btn = document.getElementById('btnRegenerateAiNotify');
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i><span>Gemini 撰寫中...</span>';
+
+            try {
+                const summaryData = JSON.stringify({
+                    date: getTodayDateString(),
+                    format: currentNotifyFormat,
+                    suspended: suspended.map(e => ({ assetNo: e.assetNo, name: e.name, dept: e.department, due: e.nextDueDate, days: e.days })),
+                    upcoming: upcoming.map(e => ({ assetNo: e.assetNo, name: e.name, dept: e.department, due: e.nextDueDate, days: e.days })),
+                    inCalOverdue: inCalOverdue.map(e => ({ assetNo: e.assetNo, name: e.name, vendor: e.vendor, due: e.nextDueDate, days: e.days }))
+                });
+
+                const payload = {
+                    contents: [{
+                        role: 'user',
+                        parts: [{
+                            text: `請扮演專業的品管課長「陳品管 (QC Lead)」，根據以下 JSON 儀校設備異常與預警資料，撰寫一份符合 ISO 9001/17025 規範的「${currentNotifyFormat === 'LINE' ? 'LINE 群組催校速報' : '正式內部催校與停用管制 Email 公文'}」。語氣需專業、明確且具執行力，並清楚列出每件設備的編碼、名稱、保管單位與到期天數：\n${summaryData}`
+                        }]
+                    }]
+                };
+
+                const res = await callGeminiWithRetry(payload);
+                const text = res?.candidates?.[0]?.content?.parts?.[0]?.text;
+                if (text) {
+                    document.getElementById('aiNotifyOutput').value = text.trim();
+                    showToast('已由 Gemini AI 完成專業催校通知撰寫', 'success');
+                } else {
+                    throw new Error('No text returned');
+                }
+            } catch (err) {
+                console.warn('AI Notification fallback:', err);
+                populateDefaultNotificationTemplate();
+                showToast('AI 服務暫時忙碌，已為您產生標準 ISO 催校公文範本', 'warning');
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles"></i><span>使用 Gemini AI 潤飾生成</span>';
+            }
+        };
+
+        function copyTextToClipboard(text) {
+            const ta = document.createElement('textarea');
+            ta.value = text;
+            ta.style.position = 'fixed';
+            ta.style.opacity = '0';
+            document.body.appendChild(ta);
+            ta.select();
+            document.execCommand('copy');
+            document.body.removeChild(ta);
+        }
+
+        window.copyNotifyText = function() {
+            const text = document.getElementById('aiNotifyOutput').value;
+            copyTextToClipboard(text);
+            showToast('催校通知已複製到剪貼簿，可直接貼至 LINE 或 Email！', 'success');
+        };
+
+        // Pure JS CSV Export (PRD Section 3.1)
+        window.exportToCSV = function() {
+            if (equipmentList.length === 0) {
+                showToast('目前無設備資料可供匯出', 'warning');
+                return;
+            }
+
+            const headers = ['設備管理編碼(AssetNo)', '設備名稱', '廠牌型號', '校驗類別', '保管單位', '週期(月)', '前次校驗日', '下次到期日', '剩餘天數', '即時管制狀態', '外校廠商/內校人', '存放位置備註'];
+            const rows = equipmentList.map(eq => {
+                const st = evaluateEquipmentState(eq);
+                const statusLabel = st.isOverdueInCal ? 'IN_CALIBRATION (Overdue 外校逾期)' : st.effectiveStatus;
+                return [
+                    eq.assetNo,
+                    eq.name,
+                    eq.model,
+                    eq.category,
+                    eq.department,
+                    eq.cycleMonths,
+                    eq.lastCalDate,
+                    eq.nextDueDate,
+                    st.daysRemaining,
+                    statusLabel,
+                    eq.vendor,
+                    eq.notes
+                ].map(v => `"${String(v ?? '').replace(/"/g, '""')}"`).join(',');
+            });
+
+            const csvContent = '\uFEFF' + [headers.join(','), ...rows].join('\r\n');
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `ISO_儀校設備管制台帳_${getTodayDateString()}.csv`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+            showToast('已匯出 CSV 台帳報表', 'success');
+        };
+
+        // ============================================================================
+        // 11. AUTH MODAL & SAMPLE DATA SEEDER
+        // ============================================================================
+        document.getElementById('btnAuthModal').onclick = () => {
+            document.getElementById('authModal').classList.remove('hidden');
+        };
+        window.closeAuthModal = () => {
+            document.getElementById('authModal').classList.add('hidden');
+        };
+
+        window.handleGoogleSignIn = async function() {
+            if (!auth) return;
+            const btn = document.getElementById('btnGoogleSignIn');
+            const originalHtml = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin text-indigo-600"></i><span>正在開啟 Google 登入視窗...</span>';
+
+            try {
+                const provider = new GoogleAuthProvider();
+                provider.setCustomParameters({ prompt: 'select_account' });
+                const result = await signInWithPopup(auth, provider);
+                const user = result.user;
+                showToast(`Google 驗證成功！歡迎 ${user.displayName || user.email}`, 'success');
+                closeAuthModal();
+            } catch (err) {
+                console.error('Google Sign-In error:', err);
+                if (err.code === 'auth/unauthorized-domain') {
+                    showToast('網域尚未授權：請至 Firebase Console > Authentication > Settings > Authorized domains 加入目前預覽網域', 'warning');
+                } else if (err.code === 'auth/operation-not-allowed') {
+                    showToast('尚未啟用 Google 登入：請至 Firebase Console > Authentication > Sign-in method 啟用 Google 提供者', 'warning');
+                } else if (err.code === 'auth/popup-closed-by-user') {
+                    showToast('已取消 Google 登入視窗', 'info');
+                } else {
+                    showToast(`Google 登入失敗 (${err.code || '請確認彈出視窗與網域設定'})`, 'error');
+                }
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = originalHtml;
+            }
+        };
+
+        window.handleEmailAuthSubmit = async function(e) {
+            e.preventDefault();
+            if (!auth) return;
+            const email = document.getElementById('authEmailInput').value.trim();
+            const pass = document.getElementById('authPasswordInput').value;
+            const btn = document.getElementById('btnEmailAuthSubmit');
+            btn.disabled = true;
+
+            try {
+                await signInWithEmailAndPassword(auth, email, pass);
+                showToast(`歡迎回來，${email}`, 'success');
+                closeAuthModal();
+            } catch (signInErr) {
+                try {
+                    await createUserWithEmailAndPassword(auth, email, pass);
+                    showToast(`已註冊並登入管理員帳號：${email}`, 'success');
+                    closeAuthModal();
+                } catch (createErr) {
+                    showToast('Email 登入失敗：請確認帳號密碼格式或權限設定', 'error');
+                }
+            } finally {
+                btn.disabled = false;
+            }
+        };
+
+        window.handleSignOutOrReset = async function() {
+            if (!auth) return;
+            try {
+                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                    await signInWithCustomToken(auth, __initial_auth_token);
+                } else {
+                    await signInAnonymously(auth);
+                }
+                showToast('已切換回預設安全驗證連線', 'info');
+                closeAuthModal();
+            } catch (e) {
+                showToast('重設連線失敗', 'error');
+            }
+        };
+
+        function getSampleIsoDataset() {
+            const today = new Date();
+            const fmtDate = (offsetDays) => {
+                const d = new Date(today);
+                d.setDate(d.getDate() + offsetDays);
+                const yyyy = d.getFullYear();
+                const mm = String(d.getMonth() + 1).padStart(2, '0');
+                const dd = String(d.getDate()).padStart(2, '0');
+                return `${yyyy}-${mm}-${dd}`;
+            };
+
+            return [
+                {
+                    id: 'EQ-2026-001',
+                    assetNo: 'QC-CAL-042',
+                    name: '數位游標卡尺 150mm',
+                    model: 'Mitutoyo 500-196-30',
+                    category: 'EXTERNAL',
+                    department: '加工一課',
+                    cycleMonths: 12,
+                    lastCalDate: fmtDate(-356),
+                    nextDueDate: fmtDate(9), // Upcoming in 9 days (<= 14D warning)
+                    status: 'UPCOMING',
+                    vendor: '精密量測檢驗中心',
+                    notes: '三樓品管課恆溫室 A1 抽屜'
+                },
+                {
+                    id: 'EQ-2026-002',
+                    assetNo: 'QC-CAL-018',
+                    name: '外徑分厘卡 0-25mm',
+                    model: 'Mitutoyo 293-240-30',
+                    category: 'INTERNAL',
+                    department: '車銑二課',
+                    cycleMonths: 6,
+                    lastCalDate: fmtDate(-190),
+                    nextDueDate: fmtDate(-8), // Overdue by 8 days -> SUSPENDED
+                    status: 'SUSPENDED',
+                    vendor: '品管課 陳品管 (塊規內校)',
+                    notes: '產線 B 區檢驗台 (已逾期需張貼停用單)'
+                },
+                {
+                    id: 'EQ-2026-003',
+                    assetNo: 'QC-CAL-089',
+                    name: '三次元座標量測儀 (CMM)',
+                    model: 'Hexagon Global S 07.10.07',
+                    category: 'EXTERNAL',
+                    department: '品管課',
+                    cycleMonths: 12,
+                    lastCalDate: fmtDate(-120),
+                    nextDueDate: fmtDate(245), // Normal (> 14D)
+                    status: 'NORMAL',
+                    vendor: 'Hexagon 原廠 TAF 實驗室',
+                    notes: '一樓精密量測恆溫室 (20±1°C)'
+                },
+                {
+                    id: 'EQ-2026-004',
+                    assetNo: 'QC-CAL-105',
+                    name: '數位扭力扳手 20-100Nm',
+                    model: 'Tohnichi CEM100N3X15D',
+                    category: 'EXTERNAL',
+                    department: '組裝一課',
+                    cycleMonths: 12,
+                    lastCalDate: fmtDate(-370),
+                    nextDueDate: fmtDate(-5), // In calibration AND past due -> IN_CALIBRATION (Overdue 外校逾期)
+                    status: 'IN_CALIBRATION',
+                    vendor: 'SGS 台灣檢驗科技校正實驗室',
+                    notes: '已於上週送件 SGS，單號 #SF-90812'
+                },
+                {
+                    id: 'EQ-2026-005',
+                    assetNo: 'QC-CAL-112',
+                    name: '精密電子天平 3000g/0.01g',
+                    model: 'Mettler Toledo ME3002',
+                    category: 'EXTERNAL',
+                    department: '研發實驗室',
+                    cycleMonths: 12,
+                    lastCalDate: fmtDate(-360),
+                    nextDueDate: fmtDate(5), // Upcoming in 5 days
+                    status: 'UPCOMING',
+                    vendor: '工研院量測技術發展中心',
+                    notes: '二樓材料分析室天平桌'
+                },
+                {
+                    id: 'EQ-2026-006',
+                    assetNo: 'QC-CAL-063',
+                    name: '花崗岩精密平台 1000x750mm',
+                    model: 'Mitutoyo Grade 00',
+                    category: 'INTERNAL',
+                    department: '品管課',
+                    cycleMonths: 24,
+                    lastCalDate: fmtDate(-200),
+                    nextDueDate: fmtDate(530), // Normal
+                    status: 'NORMAL',
+                    vendor: '品管課 陳品管 (電子水平儀內校)',
+                    notes: '品管課巡檢室中央'
+                }
+            ];
+        }
+
+        window.seedSampleData = async function() {
+            const btn = document.getElementById('btnSeedData');
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i><span>載入中...</span>';
+
+            const sampleItems = getSampleIsoDataset();
+            const sampleLogs = [
+                {
+                    id: 'LOG-20251029-001',
+                    equipmentId: 'EQ-2026-001',
+                    assetNo: 'QC-CAL-042',
+                    calDate: sampleItems[0].lastCalDate,
+                    result: 'PASS',
+                    certNo: 'CERT-2025-8899A',
+                    calibrator: '精密量測檢驗中心',
+                    rawAiExtractedText: 'TAF 認證報告 CERT-2025-8899A，器差 +0.004mm 符合允收標準，判定 PASS。',
+                    createdAt: new Date().toISOString(),
+                    operatorUid: currentUser ? currentUser.uid : 'qc_lead_seed'
+                }
+            ];
+
+            try {
+                if (db && currentUser) {
+                    for (const item of sampleItems) {
+                        // Avoid overwriting if assetNo already exists
+                        const exists = equipmentList.some(e => e.assetNo === item.assetNo);
+                        if (!exists) {
+                            const ref = doc(db, 'artifacts', appId, 'public', 'data', 'equipment', item.id);
+                            await setDoc(ref, { ...item, updatedAt: new Date().toISOString(), updatedBy: currentUser.uid });
+                        }
+                    }
+                    for (const log of sampleLogs) {
+                        const logRef = doc(db, 'artifacts', appId, 'public', 'data', 'calibration_logs', log.id);
+                        await setDoc(logRef, log);
+                    }
+                } else {
+                    seedLocalFallbackData();
+                }
+                showToast('已載入 6 筆符合 ISO 9001 情境之範例儀校台帳（含預警、外校逾期、強制停用案例）', 'success');
+            } catch (err) {
+                console.error('Seed error:', err);
+                seedLocalFallbackData();
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fa-solid fa-database text-indigo-600"></i><span>載入範例台帳</span>';
+            }
+        };
+
+        function seedLocalFallbackData() {
+            equipmentList = getSampleIsoDataset();
+            populateDepartmentFilter();
+            renderDashboardAndTable();
+        }
+
+        function escapeHtml(str) {
+            return String(str ?? '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        // Real-time Server Clock Updater
+        function startClock() {
+            const clockEl = document.getElementById('serverClock');
+            const update = () => {
+                const now = new Date();
+                clockEl.textContent = now.toLocaleString('zh-TW', {
+                    year: 'numeric', month: '2-digit', day: '2-digit',
+                    hour: '2-digit', minute: '2-digit', second: '2-digit',
+                    hour12: false
+                });
+            };
+            update();
+            setInterval(update, 1000);
+        }
+
+        // Start system on window load
+        window.addEventListener('DOMContentLoaded', () => {
+            startClock();
+            initFirebaseSystem();
+        });
+    </script>
+</body>
+</html>
